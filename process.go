@@ -6,6 +6,8 @@ import (
 	"os/exec"
 )
 
+var initialWD, _ = os.Getwd()
+
 type process interface {
 	fmt.Stringer
 	Signal(sig os.Signal) error
@@ -18,6 +20,7 @@ type osProcess struct {
 
 func newOSProcess(executable string, args []string, files []*os.File, env []string) (process, error) {
 	cmd := exec.Command(executable, args...)
+	cmd.Dir = initialWD
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
