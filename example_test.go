@@ -2,65 +2,56 @@ package tableflip_test
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"code.cfops.it/go/tableflip"
 )
 
-var listenAddr = flag.String("listen", "localhost:0", "`Address` to listen on")
+var (
+	listenAddr = flag.String("listen", "localhost:8080", "`Address` to listen on")
+	pidFile    = flag.String("pid-file", "", "`Path` to pid file")
+)
 
 func Example() {
 	flag.Parse()
-	pid := os.Getpid()
+	log.SetPrefix(fmt.Sprintf("%d ", os.Getpid()))
 
-	upg, files, err := tableflip.New(tableflip.Options{})
+	upg, err := tableflip.New(tableflip.Options{
+		PIDFile: *pidFile,
+	})
 	if err != nil {
 		panic(err)
 	}
 	defer upg.Stop()
 
-	if len(files) == 0 {
-		ln, err := net.Listen("tcp", *listenAddr)
-		if err != nil {
-			log.Fatalln("Can't listen:", err)
-		}
+	go handleUpgrades(upg)
 
-		log.Printf("%d: listening on %s", pid, ln.Addr())
-
-		err = tableflip.AddListener(files, "server", ln.(tableflip.Listener))
-		if err != nil {
-			log.Fatalln("Can't add listener:", err)
-		}
-	}
-
-	// NB: Be careful not to modify files, otherwise the child
-	// won't receive them.
-	go handleUpgrades(upg, files)
-
-	lns, err := tableflip.Listeners(files)
+	ln, err := upg.Fds.Listen("tcp", *listenAddr)
 	if err != nil {
-		log.Fatalln("Can't get listeners:", err)
+		log.Fatalln("Can't listen:", err)
 	}
-
-	ln := lns["server"]
 	defer ln.Close()
 
 	go handleClients(ln)
 
-	log.Printf("%d: ready", pid)
-	upg.Ready()
+	log.Printf("ready")
+	if err := upg.Ready(); err != nil {
+		panic(err)
+	}
 	<-upg.Exit()
 }
 
-func handleUpgrades(upg *tableflip.Upgrader, files map[string]*os.File) {
+func handleUpgrades(upg *tableflip.Upgrader) {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGHUP)
 	for range sig {
-		err := upg.Upgrade(files)
+		err := upg.Upgrade()
 		if err != nil {
 			log.Println("Upgrade failed:", err)
 			continue
@@ -71,6 +62,8 @@ func handleUpgrades(upg *tableflip.Upgrader, files map[string]*os.File) {
 }
 
 func handleClients(ln net.Listener) {
+	log.Printf("listening on %s", ln.Addr())
+
 	for {
 		c, err := ln.Accept()
 		if err != nil {
@@ -78,6 +71,7 @@ func handleClients(ln net.Listener) {
 		}
 
 		go func() {
+			c.SetDeadline(time.Now().Add(time.Second))
 			c.Write([]byte("It is a mistake to think you can solve any major problems just with potatoes.\n"))
 			c.Close()
 		}()

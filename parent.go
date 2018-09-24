@@ -4,6 +4,7 @@ import (
 	"encoding/gob"
 	"io"
 	"os"
+	"syscall"
 
 	"github.com/pkg/errors"
 )
@@ -18,23 +19,33 @@ type parent struct {
 	exited <-chan struct{}
 }
 
-func newParent(env *env) (*parent, map[string]*os.File, error) {
+func newParent(env *env) (*parent, map[fileName]*file, error) {
 	if env.getenv(sentinelEnvVar) == "" {
-		return nil, make(map[string]*os.File), nil
+		return nil, make(map[fileName]*file), nil
 	}
 
 	wr := env.newFile(3, "write")
 	rd := env.newFile(4, "read")
 
-	var names []string
+	var names [][]string
 	dec := gob.NewDecoder(rd)
 	if err := dec.Decode(&names); err != nil {
 		return nil, nil, errors.Wrap(err, "can't decode names")
 	}
 
-	files := make(map[string]*os.File)
-	for i, name := range names {
-		files[name] = env.newFile(uintptr(5+i), name)
+	files := make(map[fileName]*file)
+	for i, parts := range names {
+		var key fileName
+		copy(key[:], parts)
+
+		// Start at 5 to account for stdin, etc. and write
+		// and read pipes.
+		fd := 5 + i
+		syscall.CloseOnExec(fd)
+		files[key] = &file{
+			env.newFile(uintptr(fd), key.String()),
+			uintptr(fd),
+		}
 	}
 
 	exited := make(chan struct{})

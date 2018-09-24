@@ -1,9 +1,11 @@
 package tableflip
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"strconv"
@@ -16,9 +18,9 @@ type testUpgrader struct {
 	procs chan *testProcess
 }
 
-func newTestUpgrader(opts Options) (*testUpgrader, map[string]*os.File) {
+func newTestUpgrader(opts Options) *testUpgrader {
 	env, procs := testEnv()
-	u, files, err := newUpgrader(env, opts)
+	u, err := newUpgrader(env, opts)
 	if err != nil {
 		panic(err)
 	}
@@ -26,19 +28,21 @@ func newTestUpgrader(opts Options) (*testUpgrader, map[string]*os.File) {
 	return &testUpgrader{
 		Upgrader: u,
 		procs:    procs,
-	}, files
+	}
 }
 
 func (tu *testUpgrader) upgradeAsync() <-chan error {
 	ch := make(chan error, 1)
 	go func() {
-		ch <- tu.Upgrade(nil)
+		ch <- tu.Upgrade()
 	}()
 	return ch
 }
 
+var names = []string{"zaphod", "beeblebrox"}
+
 func TestMain(m *testing.M) {
-	upg, files, err := New(Options{})
+	upg, err := New(Options{})
 	if err != nil {
 		panic(err)
 	}
@@ -48,18 +52,28 @@ func TestMain(m *testing.M) {
 		os.Exit(m.Run())
 	}
 
-	if pid := files["pid"]; pid != nil {
+	pid, err := upg.Fds.File("pid")
+	if err != nil {
+		panic(err)
+	}
+
+	if pid != nil {
 		buf := make([]byte, 8)
 		binary.LittleEndian.PutUint64(buf, uint64(os.Getpid()))
 		pid.Write(buf)
 		pid.Close()
 	}
-	delete(files, "pid")
 
-	if files["benchmark"] == nil {
-		for name, file := range files {
-			file.WriteString(name)
-			file.Close()
+	for _, name := range names {
+		file, err := upg.Fds.File(name)
+		if err != nil {
+			panic(err)
+		}
+		if file == nil {
+			continue
+		}
+		if _, err := io.WriteString(file, name); err != nil {
+			panic(err)
 		}
 	}
 
@@ -69,54 +83,53 @@ func TestMain(m *testing.M) {
 }
 
 func TestUpgraderOnOS(t *testing.T) {
-	u, files, err := newUpgrader(stdEnv, Options{})
+	u, err := newUpgrader(stdEnv, Options{})
 	if err != nil {
 		t.Fatal("Can't create Upgrader:", err)
 	}
 	defer u.Stop()
 
-	if len(files) != 0 {
-		t.Error("Expected files on clean Upgrader to be empty")
-	}
-
-	r, w, err := os.Pipe()
+	rPid, wPid, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
-	defer w.Close()
+	defer rPid.Close()
 
-	rA, wA, err := os.Pipe()
-	if err != nil {
+	if err := u.Fds.AddFile("pid", wPid); err != nil {
 		t.Fatal(err)
 	}
-	defer rA.Close()
-	defer wA.Close()
+	wPid.Close()
 
-	rB, wB, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
+	var readers []*os.File
+	defer func() {
+		for _, r := range readers {
+			r.Close()
+		}
+	}()
+
+	for _, name := range names {
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		readers = append(readers, r)
+
+		if err := u.Fds.AddFile(name, w); err != nil {
+			t.Fatal(err)
+		}
+		w.Close()
 	}
-	defer rB.Close()
-	defer wB.Close()
 
-	send := map[string]*os.File{
-		"pid": w,
-		"A":   wA,
-		"B":   wB,
-	}
-
-	if err := u.Upgrade(send); err != nil {
+	if err := u.Upgrade(); err != nil {
 		t.Fatal("Upgrade failed:", err)
 	}
 
-	// Close write end of the pipe so that reading returns EOF
-	w.Close()
-	wA.Close()
-	wB.Close()
+	// Close copies of write pipes, so that
+	// reads below return EOF.
+	u.Stop()
 
 	buf := make([]byte, 8)
-	if _, err := r.Read(buf); err != nil {
+	if _, err := rPid.Read(buf); err != nil {
 		t.Fatal(err)
 	}
 
@@ -124,29 +137,21 @@ func TestUpgraderOnOS(t *testing.T) {
 		t.Error("Child did not execute in new process")
 	}
 
-	name, err := ioutil.ReadAll(rA)
-	if err != nil {
-		t.Fatal("Can't read from A", err)
-	}
-
-	if string(name) != "A" {
-		t.Errorf("File A has name %s in child", string(name))
-	}
-
-	name, err = ioutil.ReadAll(rB)
-	if err != nil {
-		t.Fatal("Can't read from B", err)
-	}
-
-	if string(name) != "B" {
-		t.Errorf("File B has name %s in child", string(name))
+	for i, name := range names {
+		nameBytes, err := ioutil.ReadAll(readers[i])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(nameBytes, []byte(name)) {
+			t.Fatalf("File %s has name %s in child", name, string(nameBytes))
+		}
 	}
 }
 
 func TestUpgraderCleanExit(t *testing.T) {
 	t.Parallel()
 
-	u, _ := newTestUpgrader(Options{})
+	u := newTestUpgrader(Options{})
 	defer u.Stop()
 
 	errs := u.upgradeAsync()
@@ -162,7 +167,7 @@ func TestUpgraderCleanExit(t *testing.T) {
 func TestUpgraderUncleanExit(t *testing.T) {
 	t.Parallel()
 
-	u, _ := newTestUpgrader(Options{})
+	u := newTestUpgrader(Options{})
 	defer u.Stop()
 
 	errs := u.upgradeAsync()
@@ -178,7 +183,7 @@ func TestUpgraderUncleanExit(t *testing.T) {
 func TestUpgraderTimeout(t *testing.T) {
 	t.Parallel()
 
-	u, _ := newTestUpgrader(Options{
+	u := newTestUpgrader(Options{
 		UpgradeTimeout: 10 * time.Millisecond,
 	})
 	defer u.Stop()
@@ -198,7 +203,7 @@ func TestUpgraderTimeout(t *testing.T) {
 func TestUpgraderConcurrentUpgrade(t *testing.T) {
 	t.Parallel()
 
-	u, _ := newTestUpgrader(Options{})
+	u := newTestUpgrader(Options{})
 	defer u.Stop()
 
 	u.upgradeAsync()
@@ -206,7 +211,7 @@ func TestUpgraderConcurrentUpgrade(t *testing.T) {
 	new := <-u.procs
 	go new.recvSignal(nil)
 
-	if err := u.Upgrade(nil); err == nil {
+	if err := u.Upgrade(); err == nil {
 		t.Error("Expected Upgrade to refuse concurrent upgrade")
 	}
 
@@ -216,7 +221,7 @@ func TestUpgraderConcurrentUpgrade(t *testing.T) {
 func TestUpgraderReady(t *testing.T) {
 	t.Parallel()
 
-	u, _ := newTestUpgrader(Options{})
+	u := newTestUpgrader(Options{})
 	defer u.Stop()
 
 	errs := u.upgradeAsync()
@@ -250,7 +255,7 @@ func TestUpgraderReady(t *testing.T) {
 func TestUpgraderShutdownCancelsUpgrade(t *testing.T) {
 	t.Parallel()
 
-	u, _ := newTestUpgrader(Options{})
+	u := newTestUpgrader(Options{})
 	defer u.Stop()
 
 	errs := u.upgradeAsync()
@@ -263,7 +268,7 @@ func TestUpgraderShutdownCancelsUpgrade(t *testing.T) {
 		t.Error("Upgrade doesn't return an error when Stopp()ed")
 	}
 
-	if err := u.Upgrade(nil); err == nil {
+	if err := u.Upgrade(); err == nil {
 		t.Error("Upgrade doesn't return an error after Stop()")
 	}
 }
@@ -278,7 +283,7 @@ func TestReadyWritesPIDFile(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	file := dir + "/pid"
-	u, _ := newTestUpgrader(Options{
+	u := newTestUpgrader(Options{
 		PIDFile: file,
 	})
 	defer u.Stop()
@@ -306,33 +311,41 @@ func TestReadyWritesPIDFile(t *testing.T) {
 func BenchmarkUpgrade(b *testing.B) {
 	for _, n := range []int{4, 400, 4000} {
 		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
-			files := make(map[string]*os.File, n)
+			fds := newFds(nil)
 			for i := 0; i < n; i += 2 {
-				a, b, err := os.Pipe()
+				r, w, err := os.Pipe()
 				if err != nil {
-					panic(err)
+					b.Fatal(err)
 				}
 
-				files[strconv.Itoa(n)] = a
-				files[strconv.Itoa(n+1)] = b
+				err = fds.AddFile(strconv.Itoa(n), r)
+				if err != nil {
+					b.Fatal(err)
+				}
+				r.Close()
+
+				err = fds.AddFile(strconv.Itoa(n), w)
+				if err != nil {
+					b.Fatal(err)
+				}
+				w.Close()
 			}
-			files["benchmark"] = files["0"]
-			delete(files, "0")
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				u, _, err := newUpgrader(stdEnv, Options{})
+				u, err := newUpgrader(stdEnv, Options{})
 				if err != nil {
 					b.Fatal("Can't create Upgrader:", err)
 				}
 
-				if err := u.Upgrade(files); err != nil {
+				u.Fds = fds
+				if err := u.Upgrade(); err != nil {
 					b.Fatal(err)
 				}
 			}
 			b.StopTimer()
 
-			for _, f := range files {
+			for _, f := range fds.used {
 				f.Close()
 			}
 		})

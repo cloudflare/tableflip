@@ -81,9 +81,9 @@ func TestChildPassedFds(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	in := map[string]*os.File{
-		"r": r,
-		"w": w,
+	in := map[fileName]*file{
+		fileName{"r"}: newFile(r.Fd(), fileName{"r"}),
+		fileName{"w"}: newFile(w.Fd(), fileName{"w"}),
 	}
 
 	if _, err := startChild(env, in); err != nil {
@@ -100,16 +100,12 @@ func TestChildPassedFds(t *testing.T) {
 		t.Fatal("Notify failed:", err)
 	}
 
-	if fd, ok := out["r"]; !ok {
-		t.Error("r fd is missing")
-	} else if fd.Fd() != r.Fd() {
-		t.Error("r fd mismatch:", fd.Fd(), r.Fd())
-	}
-
-	if fd, ok := out["w"]; !ok {
-		t.Error("w fd is missing")
-	} else if fd.Fd() != w.Fd() {
-		t.Error("w fd mismatch:", fd.Fd(), w.Fd())
+	for name, inFd := range in {
+		if outFd, ok := out[name]; !ok {
+			t.Error(name, "is missing")
+		} else if outFd.Fd() != inFd.Fd() {
+			t.Error(name, "fd mismatch:", outFd.Fd(), inFd.Fd())
+		}
 	}
 
 	proc.exit(nil)

@@ -34,6 +34,8 @@ type Upgrader struct {
 	upgradeSem chan struct{}
 	exitC      chan struct{}      // only close this if holding upgradeSem
 	exitFd     neverCloseThisFile // protected by upgradeSem
+
+	Fds *Fds
 }
 
 var (
@@ -44,25 +46,25 @@ var (
 // New creates a new Upgrader. Files are passed from the parent and may be empty.
 //
 // Only the first call to this function will succeed.
-func New(opts Options) (upg *Upgrader, files map[string]*os.File, err error) {
+func New(opts Options) (upg *Upgrader, err error) {
 	stdEnvMu.Lock()
 	defer stdEnvMu.Unlock()
 
 	if stdEnvUpgrader != nil {
-		return nil, nil, errors.New("tableflip: only a single Upgrader allowed")
+		return nil, errors.New("tableflip: only a single Upgrader allowed")
 	}
 
-	upg, files, err = newUpgrader(stdEnv, opts)
+	upg, err = newUpgrader(stdEnv, opts)
 	// Store a reference to upg in a private global variable, to prevent
 	// it from being GC'ed and exitFd being closed prematurely.
 	stdEnvUpgrader = upg
 	return
 }
 
-func newUpgrader(env *env, opts Options) (*Upgrader, map[string]*os.File, error) {
+func newUpgrader(env *env, opts Options) (*Upgrader, error) {
 	parent, files, err := newParent(env)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	if opts.UpgradeTimeout <= 0 {
@@ -76,15 +78,19 @@ func newUpgrader(env *env, opts Options) (*Upgrader, map[string]*os.File, error)
 		stopC:      make(chan struct{}),
 		upgradeSem: make(chan struct{}, 1),
 		exitC:      make(chan struct{}),
+		Fds:        newFds(files),
 	}
 
-	return s, files, nil
+	return s, nil
 }
 
-// Ready signals that the current process
-// is ready to accept connections. It must be called to finish
-// the upgrade.
+// Ready signals that the current process is ready to accept connections.
+// It must be called to finish the upgrade.
+//
+// All fds which were inherited but not used are closed after the call to Ready.
 func (u *Upgrader) Ready() error {
+	u.Fds.closeInherited()
+
 	if u.opts.PIDFile != "" {
 		if err := writePIDFile(u.opts.PIDFile); err != nil {
 			return errors.Wrap(err, "tableflip: can't write PID file")
@@ -119,11 +125,13 @@ func (u *Upgrader) Stop() {
 			close(u.exitC)
 		}
 		<-u.upgradeSem
+
+		u.Fds.closeUsed()
 	})
 }
 
-// Upgrade triggers an upgrade. files are passed to the new process.
-func (u *Upgrader) Upgrade(files map[string]*os.File) error {
+// Upgrade triggers an upgrade.
+func (u *Upgrader) Upgrade() error {
 	// Acquire semaphore, but don't block. This allows informing
 	// the user that they are doing too many upgrade requests.
 	select {
@@ -151,7 +159,7 @@ func (u *Upgrader) Upgrade(files map[string]*os.File) error {
 		}
 	}
 
-	child, err := startChild(u.env, files)
+	child, err := startChild(u.env, u.Fds.copy())
 	if err != nil {
 		return errors.Wrap(err, "can't start child")
 	}

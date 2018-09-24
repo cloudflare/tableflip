@@ -17,7 +17,7 @@ type child struct {
 	doneC          <-chan struct{}
 }
 
-func startChild(env *env, passedFds map[string]*os.File) (*child, error) {
+func startChild(env *env, passedFiles map[fileName]*file) (*child, error) {
 	// These pipes are used for communication between parent and child
 	// readyW is passed to the child, readyR stays with the parent
 	readyR, readyW, err := os.Pipe()
@@ -34,10 +34,12 @@ func startChild(env *env, passedFds map[string]*os.File) (*child, error) {
 
 	// Copy passed fds and append the notification pipe
 	fds := []*os.File{readyW, namesR}
-	var fdNames []string
-	for name, fd := range passedFds {
-		fds = append(fds, fd)
-		fdNames = append(fdNames, name)
+	var fdNames [][]string
+	for name, file := range passedFiles {
+		nameSlice := make([]string, len(name))
+		copy(nameSlice, name[:])
+		fdNames = append(fdNames, nameSlice)
+		fds = append(fds, file.File)
 	}
 
 	// Copy environment and append the notification env vars
@@ -100,11 +102,11 @@ func (c *child) waitReady(readyC chan<- *os.File) {
 	c.readyR.Close()
 }
 
-func (c *child) writeNames(names []string) {
+func (c *child) writeNames(names [][]string) {
 	enc := gob.NewEncoder(c.namesW)
 	if names == nil {
 		// Gob panics on nil
-		_ = enc.Encode([]string{})
+		_ = enc.Encode([][]string{})
 		return
 	}
 	_ = enc.Encode(names)
