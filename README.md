@@ -44,15 +44,17 @@ if err != nil {
 	log.Fatalln("Can't listen:", err)
 }
 
-go func() {
-	defer ln.Close()
-
-	conn, err := ln.Accept()
-	// ...
-}()
+var server http.Server
+go server.Serve(ln)
 
 if err := upg.Ready(); err != nil {
 	panic(err)
 }
 <-upg.Exit()
+
+time.AfterFunc(30*time.Second, func() {
+	os.Exit(1)
+})
+
+_ = server.Shutdown(context.Background())
 ```
