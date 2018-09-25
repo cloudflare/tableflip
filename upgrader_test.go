@@ -24,6 +24,10 @@ func newTestUpgrader(opts Options) *testUpgrader {
 	if err != nil {
 		panic(err)
 	}
+	err = u.Ready()
+	if err != nil {
+		panic(err)
+	}
 
 	return &testUpgrader{
 		Upgrader: u,
@@ -118,6 +122,14 @@ func TestUpgraderOnOS(t *testing.T) {
 			t.Fatal(err)
 		}
 		w.Close()
+	}
+
+	if err := u.Upgrade(); err == nil {
+		t.Error("Upgrade before Ready should return an error")
+	}
+
+	if err := u.Ready(); err != nil {
+		t.Fatal("Ready failed:", err)
 	}
 
 	if err := u.Upgrade(); err != nil {
@@ -336,6 +348,9 @@ func BenchmarkUpgrade(b *testing.B) {
 				u, err := newUpgrader(stdEnv, Options{})
 				if err != nil {
 					b.Fatal("Can't create Upgrader:", err)
+				}
+				if err := u.Ready(); err != nil {
+					b.Fatal("Can't call Ready:", err)
 				}
 
 				u.Fds = fds

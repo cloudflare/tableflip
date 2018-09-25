@@ -29,6 +29,8 @@ type Upgrader struct {
 	*env
 	opts       Options
 	parent     *parent
+	readyOnce  sync.Once
+	readyC     chan struct{}
 	stopOnce   sync.Once
 	stopC      chan struct{}
 	upgradeSem chan struct{}
@@ -75,6 +77,7 @@ func newUpgrader(env *env, opts Options) (*Upgrader, error) {
 		env:        env,
 		opts:       opts,
 		parent:     parent,
+		readyC:     make(chan struct{}),
 		stopC:      make(chan struct{}),
 		upgradeSem: make(chan struct{}, 1),
 		exitC:      make(chan struct{}),
@@ -89,7 +92,10 @@ func newUpgrader(env *env, opts Options) (*Upgrader, error) {
 //
 // All fds which were inherited but not used are closed after the call to Ready.
 func (u *Upgrader) Ready() error {
-	u.Fds.closeInherited()
+	u.readyOnce.Do(func() {
+		u.Fds.closeInherited()
+		close(u.readyC)
+	})
 
 	if u.opts.PIDFile != "" {
 		if err := writePIDFile(u.opts.PIDFile); err != nil {
@@ -157,6 +163,12 @@ func (u *Upgrader) Upgrade() error {
 		default:
 			return errors.New("parent hasn't exited")
 		}
+	}
+
+	select {
+	case <-u.readyC:
+	default:
+		return errors.New("process is not ready")
 	}
 
 	child, err := startChild(u.env, u.Fds.copy())
