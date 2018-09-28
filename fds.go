@@ -144,9 +144,13 @@ func (f *Fds) AddListener(network, addr string, ln Listener) error {
 	return f.addListenerLocked(network, addr, ln)
 }
 
+type unlinkOnCloser interface {
+	SetUnlinkOnClose(bool)
+}
+
 func (f *Fds) addListenerLocked(network, addr string, ln Listener) error {
-	if unixLn, ok := ln.(*net.UnixListener); ok {
-		unixLn.SetUnlinkOnClose(false)
+	if ifc, ok := ln.(unlinkOnCloser); ok {
+		ifc.SetUnlinkOnClose(false)
 	}
 
 	return f.addConnLocked(listenKind, network, addr, ln)
@@ -257,10 +261,28 @@ func (f *Fds) closeInherited() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	for _, file := range f.inherited {
+	for key, file := range f.inherited {
+		if key[0] == listenKind && (key[1] == "unix" || key[1] == "unixpacket") {
+			// Remove inherited but unused Unix sockets from the file system.
+			// This undoes the effect of SetUnlinkOnClose(false).
+			_ = unlinkUnixSocket(key[2])
+		}
 		_ = file.Close()
 	}
 	f.inherited = make(map[fileName]*file)
+}
+
+func unlinkUnixSocket(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+
+	if info.Mode()&os.ModeSocket == 0 {
+		return nil
+	}
+
+	return os.Remove(path)
 }
 
 func (f *Fds) closeUsed() {

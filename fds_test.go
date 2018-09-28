@@ -1,8 +1,10 @@
 package tableflip
 
 import (
+	"io/ioutil"
 	"net"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -36,12 +38,35 @@ func TestFdsListener(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer tcp.Close()
+
+	temp, err := ioutil.TempDir("", "tableflip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(temp)
+
+	socketPath := filepath.Join(temp, "socket")
+	unix, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close()
 
 	parent := newFds(nil)
 	if err := parent.AddListener(addr.Network(), addr.String(), tcp); err != nil {
 		t.Fatal("Can't add listener:", err)
 	}
 	tcp.Close()
+
+	if err := parent.AddListener("unix", socketPath, unix.(Listener)); err != nil {
+		t.Fatal("Can't add listener:", err)
+	}
+	unix.Close()
+
+	if _, err := os.Stat(socketPath); err != nil {
+		t.Error("Unix.Close() unlinked socketPath:", err)
+	}
 
 	child := newFds(parent.copy())
 	ln, err := child.Listener(addr.Network(), addr.String())
@@ -52,6 +77,11 @@ func TestFdsListener(t *testing.T) {
 		t.Fatal("Missing listener")
 	}
 	ln.Close()
+
+	child.closeInherited()
+	if _, err := os.Stat(socketPath); err == nil {
+		t.Error("closeInherited() did not unlink socketPath")
+	}
 }
 
 func TestFdsConn(t *testing.T) {
