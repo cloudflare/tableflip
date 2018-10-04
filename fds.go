@@ -303,29 +303,22 @@ func dupConn(conn syscall.Conn, name fileName) (*file, error) {
 		return nil, err
 	}
 
-	var dup int
+	var dup *file
 	var duperr error
 	err = raw.Control(func(fd uintptr) {
-		dup, duperr = syscall.Dup(int(fd))
-		if duperr != nil {
-			return
-		}
-		syscall.CloseOnExec(dup)
+		dup, duperr = dupFd(fd, name)
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "can't access fd")
 	}
-	if duperr != nil {
-		return nil, errors.Wrap(err, "can't dup conn")
-	}
-	return newFile(uintptr(dup), name), nil
+	return dup, duperr
 }
 
 func dupFd(fd uintptr, name fileName) (*file, error) {
-	dup, err := syscall.Dup(int(fd))
-	if err != nil {
-		return nil, errors.Wrap(err, "can't dup fd")
+	dupfd, _, errno := syscall.Syscall(syscall.SYS_FCNTL, fd, syscall.F_DUPFD_CLOEXEC, 0)
+	if errno != 0 {
+		return nil, errors.Wrap(errno, "can't dup fd using fcntl")
 	}
-	syscall.CloseOnExec(dup)
-	return newFile(uintptr(dup), name), nil
+
+	return newFile(dupfd, name), nil
 }
