@@ -34,6 +34,7 @@ func newTestProcess(fds []*os.File, envstr []string) (*testProcess, error) {
 			getenv: func(key string) string {
 				return environ[key]
 			},
+			closeOnExec: func(int) {},
 		},
 		make(chan os.Signal, 1),
 		make(chan error),
@@ -78,7 +79,7 @@ func (tp *testProcess) recvSignal(err error) os.Signal {
 	return sig
 }
 
-func (tp *testProcess) notify() (map[fileName]*file, <-chan struct{}, error) {
+func (tp *testProcess) notify() (map[fileName]*file, <-chan error, error) {
 	parent, files, err := newParent(&tp.env)
 	if err != nil {
 		return nil, nil, err
