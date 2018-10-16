@@ -3,6 +3,7 @@ package tableflip
 import (
 	"encoding/gob"
 	"io"
+	"io/ioutil"
 	"os"
 	"syscall"
 
@@ -52,13 +53,12 @@ func newParent(env *env) (*parent, map[fileName]*file, error) {
 	go func() {
 		defer rd.Close()
 
-		buf := make([]byte, 1)
-		switch _, err := rd.Read(buf); err {
-		case io.EOF:
-			break // expected
-		case nil:
-			exited <- errors.New("unexpected data tail from parent process")
-		default:
+		n, err := io.Copy(ioutil.Discard, rd)
+		if n != 0 {
+			exited <- errors.New("unexpected data tail from parent processdiscarded")
+		}
+		for err != nil {
+			// permantent lock; see issue #1
 			exited <- errors.Wrap(err, "parent process lost after data retrieval")
 		}
 		close(exited)
