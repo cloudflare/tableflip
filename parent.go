@@ -55,7 +55,7 @@ func newParent(env *env) (*parent, map[fileName]*file, error) {
 
 		n, err := io.Copy(ioutil.Discard, rd)
 		if n != 0 {
-			exited <- errors.New("unexpected data tail from parent processdiscarded")
+			exited <- errors.New("unexpected data from parent process")
 		}
 		for err != nil {
 			// permantent lock; see issue #1
