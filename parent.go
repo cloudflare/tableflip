@@ -3,6 +3,7 @@ package tableflip
 import (
 	"encoding/gob"
 	"io"
+	"io/ioutil"
 	"os"
 	"syscall"
 
@@ -16,7 +17,7 @@ const (
 
 type parent struct {
 	wr     *os.File
-	exited <-chan struct{}
+	exited <-chan error
 }
 
 func newParent(env *env) (*parent, map[fileName]*file, error) {
@@ -30,7 +31,7 @@ func newParent(env *env) (*parent, map[fileName]*file, error) {
 	var names [][]string
 	dec := gob.NewDecoder(rd)
 	if err := dec.Decode(&names); err != nil {
-		return nil, nil, errors.Wrap(err, "can't decode names")
+		return nil, nil, errors.Wrap(err, "can't decode names from parent process")
 	}
 
 	files := make(map[fileName]*file)
@@ -48,13 +49,17 @@ func newParent(env *env) (*parent, map[fileName]*file, error) {
 		}
 	}
 
-	exited := make(chan struct{})
+	exited := make(chan error, 1)
 	go func() {
 		defer rd.Close()
 
-		buf := make([]byte, 1)
-		if _, err := rd.Read(buf); err != io.EOF {
-			panic(err)
+		n, err := io.Copy(ioutil.Discard, rd)
+		if n != 0 {
+			exited <- errors.New("unexpected data from parent process")
+		}
+		for err != nil {
+			// permantent lock; see issue #1
+			exited <- errors.Wrap(err, "parent process lost after data retrieval")
 		}
 		close(exited)
 	}()
@@ -68,7 +73,7 @@ func newParent(env *env) (*parent, map[fileName]*file, error) {
 func (ps *parent) sendReady() error {
 	defer ps.wr.Close()
 	if _, err := ps.wr.Write([]byte{notifyReady}); err != nil {
-		return errors.Wrap(err, "can't notify parent")
+		return errors.Wrap(err, "can't notify parent process")
 	}
 	return nil
 }

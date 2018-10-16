@@ -158,8 +158,13 @@ func (u *Upgrader) Upgrade() error {
 	}
 
 	if u.parent != nil {
+		// verify clean exit
 		select {
-		case <-u.parent.exited:
+		case err := <-u.parent.exited:
+			if err != nil {
+				return err
+			}
+
 		default:
 			return errors.New("parent hasn't exited")
 		}

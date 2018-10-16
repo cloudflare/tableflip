@@ -258,7 +258,10 @@ func TestUpgraderReady(t *testing.T) {
 	u.exitFd.file.Close()
 
 	select {
-	case <-exited:
+	case err := <-exited:
+		if err != nil {
+			t.Error("exit error", err)
+		}
 	case <-time.After(time.Second):
 		t.Error("Child wasn't notified of parent exiting")
 	}
