@@ -15,7 +15,8 @@ func testEnv() (*env, chan *testProcess) {
 			procs <- p
 			return p, nil
 		},
-		environ: func() []string { return nil },
-		getenv:  func(string) string { return "" },
+		environ:     func() []string { return nil },
+		getenv:      func(string) string { return "" },
+		closeOnExec: func(fd int) {},
 	}, procs
 }
