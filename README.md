@@ -7,8 +7,8 @@ network service, without disrupting existing connections. Usually, this is
 achieved by starting a new process, somehow transferring clients to it and
 then exiting the old process.
 
-There are many ways to implement graceful upgrades. They vary wildly in the
-trade-offs they make, and how much control they afford the user. This library
+There are [many ways to implement graceful upgrades](https://blog.cloudflare.com/graceful-upgrades-in-go/).
+They vary wildly in the trade-offs they make, and how much control they afford the user. This library
 has the following goals:
 
 * No old code keeps running after a successful upgrade
