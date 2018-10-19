@@ -53,7 +53,7 @@ func startChild(env *env, passedFiles map[fileName]*file) (*child, error) {
 		readyW.Close()
 		namesR.Close()
 		namesW.Close()
-		return nil, errors.Wrap(err, "can't start process")
+		return nil, errors.Wrapf(err, "can't start process %s", os.Args[0])
 	}
 
 	doneC := make(chan struct{})
