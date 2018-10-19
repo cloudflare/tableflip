@@ -1,6 +1,7 @@
 # Graceful process restarts in Go
 
 [![](https://godoc.org/github.com/cloudflare/tableflip?status.svg)](https://godoc.org/github.com/cloudflare/tableflip)
+[![Build Status](https://travis-ci.com/cloudflare/tableflip.svg?branch=master)](https://travis-ci.com/cloudflare/tableflip)
 
 It is sometimes useful to update the running code and / or configuration of a
 network service, without disrupting existing connections. Usually, this is
