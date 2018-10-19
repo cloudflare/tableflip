@@ -12,8 +12,8 @@ They vary wildly in the trade-offs they make, and how much control they afford t
 has the following goals:
 
 * No old code keeps running after a successful upgrade
-* The new process has a grace period for performing initialisation
-* Crashing during initialisation is OK
+* The new process has a grace period for performing initialization
+* Crashing during initialization is OK
 * Only a single upgrade is ever run in parallel
 
 It's easy to get started:
