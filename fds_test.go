@@ -10,7 +10,7 @@ import (
 
 func TestFdsListen(t *testing.T) {
 	addrs := [][2]string{
-		{"unixgram", ""},
+		{"unix", ""},
 		{"tcp", "localhost:0"},
 	}
 
