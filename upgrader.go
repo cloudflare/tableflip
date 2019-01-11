@@ -193,7 +193,7 @@ func (u *Upgrader) Upgrade() error {
 		if err == nil {
 			return errors.Errorf("child %s exited", child)
 		}
-		return errors.Wrap(err, "child %s exited")
+		return errors.Wrapf(err, "child %s exited", child)
 
 	case <-u.stopC:
 		child.Kill()
