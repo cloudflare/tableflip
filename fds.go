@@ -228,11 +228,12 @@ func (f *Fds) File(name string) (*os.File, error) {
 
 // AddFile adds a file.
 //
-// As of Go 1.11, file will be in blocking mode
+// Until Go 1.12, file will be in blocking mode
 // after this call.
 func (f *Fds) AddFile(name string, file *os.File) error {
 	key := fileName{fdKind, name}
-	dup, err := dupFd(file.Fd(), key)
+
+	dup, err := dupFile(file, key)
 	if err != nil {
 		return err
 	}
