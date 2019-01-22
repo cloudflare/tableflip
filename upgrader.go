@@ -1,6 +1,7 @@
 package tableflip
 
 import (
+	"context"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -211,6 +212,37 @@ func (u *Upgrader) Upgrade() error {
 		close(u.exitC)
 		return nil
 	}
+}
+
+// WaitForParentExit wait until parent exit if parent exists
+// otherwise returns directly
+// returns nil when OK, non nil when NG
+func (u *Upgrader) WaitForParentExit(ctx context.Context) error {
+	if u.parent == nil {
+		return nil
+	}
+
+	if u.parentErr != nil {
+		return u.parentErr
+	}
+
+	select {
+	default:
+		return errors.New("upgrade in progress")
+	case u.upgradeSem <- struct{}{}:
+	}
+
+	defer func() {
+		<-u.upgradeSem
+	}()
+
+	select {
+	case err := <-u.parent.exited:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
 }
 
 // This file must never be closed by the Go runtime, since its used by the
