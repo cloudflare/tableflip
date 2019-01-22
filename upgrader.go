@@ -242,6 +242,9 @@ func (u *Upgrader) WaitForParentExit(ctx context.Context) error {
 
 	select {
 	case err := <-u.parent.exited:
+		if err != nil {
+			u.parentErr = err
+		}
 		return err
 	case <-ctx.Done():
 		return ctx.Err()
