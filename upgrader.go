@@ -236,6 +236,10 @@ func (u *Upgrader) WaitForParentExit(ctx context.Context) error {
 		<-u.upgradeSem
 	}()
 
+	if u.parentErr != nil {
+		return u.parentErr
+	}
+
 	select {
 	case err := <-u.parent.exited:
 		return err
