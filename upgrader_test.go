@@ -29,18 +29,31 @@ func newTestUpgrader(opts Options) *testUpgrader {
 		panic(err)
 	}
 
+	// The upgrader needs some time to pick up the ready signal.
+	time.Sleep(time.Millisecond)
+
 	return &testUpgrader{
 		Upgrader: u,
 		procs:    procs,
 	}
 }
 
-func (tu *testUpgrader) upgradeAsync() <-chan error {
+func (tu *testUpgrader) upgradeProc(t *testing.T) (*testProcess, <-chan error) {
+	t.Helper()
+
 	ch := make(chan error, 1)
 	go func() {
 		ch <- tu.Upgrade()
 	}()
-	return ch
+
+	select {
+	case err := <-ch:
+		t.Fatal("Upgrade failed:", err)
+		return nil, nil
+
+	case proc := <-tu.procs:
+		return proc, ch
+	}
 }
 
 var names = []string{"zaphod", "beeblebrox"}
@@ -166,11 +179,9 @@ func TestUpgraderCleanExit(t *testing.T) {
 	u := newTestUpgrader(Options{})
 	defer u.Stop()
 
-	errs := u.upgradeAsync()
+	proc, errs := u.upgradeProc(t)
 
-	first := <-u.procs
-	first.exit(nil)
-
+	proc.exit(nil)
 	if err := <-errs; err == nil {
 		t.Error("Expected Upgrade to return error when new child exits clean")
 	}
@@ -182,11 +193,9 @@ func TestUpgraderUncleanExit(t *testing.T) {
 	u := newTestUpgrader(Options{})
 	defer u.Stop()
 
-	errs := u.upgradeAsync()
+	proc, errs := u.upgradeProc(t)
 
-	first := <-u.procs
-	first.exit(errors.New("some error"))
-
+	proc.exit(errors.New("some error"))
 	if err := <-errs; err == nil {
 		t.Error("Expected Upgrade to return error when new child exits unclean")
 	}
@@ -200,9 +209,8 @@ func TestUpgraderTimeout(t *testing.T) {
 	})
 	defer u.Stop()
 
-	errs := u.upgradeAsync()
+	new, errs := u.upgradeProc(t)
 
-	new := <-u.procs
 	if sig := new.recvSignal(nil); sig != os.Kill {
 		t.Error("Expected os.Kill, got", sig)
 	}
@@ -218,9 +226,8 @@ func TestUpgraderConcurrentUpgrade(t *testing.T) {
 	u := newTestUpgrader(Options{})
 	defer u.Stop()
 
-	u.upgradeAsync()
+	new, _ := u.upgradeProc(t)
 
-	new := <-u.procs
 	go new.recvSignal(nil)
 
 	if err := u.Upgrade(); err == nil {
@@ -236,9 +243,8 @@ func TestUpgraderReady(t *testing.T) {
 	u := newTestUpgrader(Options{})
 	defer u.Stop()
 
-	errs := u.upgradeAsync()
+	new, errs := u.upgradeProc(t)
 
-	new := <-u.procs
 	_, exited, err := new.notify()
 	if err != nil {
 		t.Fatal("Can't notify Upgrader:", err)
@@ -273,9 +279,8 @@ func TestUpgraderShutdownCancelsUpgrade(t *testing.T) {
 	u := newTestUpgrader(Options{})
 	defer u.Stop()
 
-	errs := u.upgradeAsync()
+	new, errs := u.upgradeProc(t)
 
-	new := <-u.procs
 	go new.recvSignal(nil)
 
 	u.Stop()
