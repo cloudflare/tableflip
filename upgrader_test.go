@@ -29,9 +29,6 @@ func newTestUpgrader(opts Options) *testUpgrader {
 		panic(err)
 	}
 
-	// The upgrader needs some time to pick up the ready signal.
-	time.Sleep(time.Millisecond)
-
 	return &testUpgrader{
 		Upgrader: u,
 		procs:    procs,
@@ -43,7 +40,13 @@ func (tu *testUpgrader) upgradeProc(t *testing.T) (*testProcess, <-chan error) {
 
 	ch := make(chan error, 1)
 	go func() {
-		ch <- tu.Upgrade()
+		for {
+			err := tu.Upgrade()
+			if err != errNotReady {
+				ch <- err
+				return
+			}
+		}
 	}()
 
 	select {
@@ -145,8 +148,12 @@ func TestUpgraderOnOS(t *testing.T) {
 		t.Fatal("Ready failed:", err)
 	}
 
-	if err := u.Upgrade(); err != nil {
-		t.Fatal("Upgrade failed:", err)
+	for {
+		if err := u.Upgrade(); err == nil {
+			break
+		} else if err != errNotReady {
+			t.Fatal("Upgrade failed:", err)
+		}
 	}
 
 	// Close copies of write pipes, so that
@@ -261,7 +268,8 @@ func TestUpgraderReady(t *testing.T) {
 	}
 
 	// Simulate the process exiting
-	u.exitFd.file.Close()
+	file := <-u.exitFd
+	file.file.Close()
 
 	select {
 	case err := <-exited:

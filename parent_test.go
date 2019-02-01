@@ -17,7 +17,7 @@ func TestParentExit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	readyFile := <-child.readyC
+	readyFile := <-child.ready
 	if _, err = readyFile.Write([]byte{1}); err != nil {
 		t.Fatal("Can't inject garbage from parent")
 	}

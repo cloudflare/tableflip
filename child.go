@@ -12,9 +12,9 @@ type child struct {
 	*env
 	proc           process
 	readyR, namesW *os.File
-	readyC         <-chan *os.File
-	exitedC        <-chan error
-	doneC          <-chan struct{}
+	ready          <-chan *os.File
+	result         <-chan error
+	exited         <-chan struct{}
 }
 
 func startChild(env *env, passedFiles map[fileName]*file) (*child, error) {
@@ -56,22 +56,22 @@ func startChild(env *env, passedFiles map[fileName]*file) (*child, error) {
 		return nil, errors.Wrapf(err, "can't start process %s", os.Args[0])
 	}
 
-	doneC := make(chan struct{})
-	exitedC := make(chan error, 1)
-	readyC := make(chan *os.File, 1)
+	exited := make(chan struct{})
+	result := make(chan error, 1)
+	ready := make(chan *os.File, 1)
 
 	c := &child{
 		env,
 		proc,
 		readyR,
 		namesW,
-		readyC,
-		exitedC,
-		doneC,
+		ready,
+		result,
+		exited,
 	}
 	go c.writeNames(fdNames)
-	go c.waitExit(exitedC, doneC)
-	go c.waitReady(readyC)
+	go c.waitExit(result, exited)
+	go c.waitReady(ready)
 	return c, nil
 }
 
@@ -83,21 +83,21 @@ func (c *child) Kill() {
 	c.proc.Signal(os.Kill)
 }
 
-func (c *child) waitExit(exitedC chan<- error, doneC chan<- struct{}) {
-	exitedC <- c.proc.Wait()
-	close(doneC)
+func (c *child) waitExit(result chan<- error, exited chan<- struct{}) {
+	result <- c.proc.Wait()
+	close(exited)
 	// Unblock waitReady and writeNames
 	c.readyR.Close()
 	c.namesW.Close()
 }
 
-func (c *child) waitReady(readyC chan<- *os.File) {
+func (c *child) waitReady(ready chan<- *os.File) {
 	var b [1]byte
 	if n, _ := c.readyR.Read(b[:]); n > 0 && b[0] == notifyReady {
 		// We know that writeNames has exited by this point.
 		// Closing the FD now signals to the child that the parent
 		// has exited.
-		readyC <- c.namesW
+		ready <- c.namesW
 	}
 	c.readyR.Close()
 }

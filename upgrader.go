@@ -27,16 +27,15 @@ type Options struct {
 // Upgrader handles zero downtime upgrades and passing files between processes.
 type Upgrader struct {
 	*env
-	opts       Options
-	parent     *parent
-	readyOnce  sync.Once
-	readyC     chan struct{}
-	stopOnce   sync.Once
-	stopC      chan struct{}
-	upgradeSem chan struct{}
-	exitC      chan struct{}      // only close this if holding upgradeSem
-	exitFd     neverCloseThisFile // protected by upgradeSem
-	parentErr  error              // protected by upgradeSem
+	opts      Options
+	parent    *parent
+	readyOnce sync.Once
+	readyC    chan struct{}
+	stopOnce  sync.Once
+	stopC     chan struct{}
+	upgradeC  chan chan<- error
+	exitC     chan struct{}
+	exitFd    chan neverCloseThisFile
 
 	Fds *Fds
 }
@@ -74,18 +73,21 @@ func newUpgrader(env *env, opts Options) (*Upgrader, error) {
 		opts.UpgradeTimeout = DefaultUpgradeTimeout
 	}
 
-	s := &Upgrader{
-		env:        env,
-		opts:       opts,
-		parent:     parent,
-		readyC:     make(chan struct{}),
-		stopC:      make(chan struct{}),
-		upgradeSem: make(chan struct{}, 1),
-		exitC:      make(chan struct{}),
-		Fds:        newFds(files),
+	u := &Upgrader{
+		env:      env,
+		opts:     opts,
+		parent:   parent,
+		readyC:   make(chan struct{}),
+		stopC:    make(chan struct{}),
+		upgradeC: make(chan chan<- error),
+		exitC:    make(chan struct{}),
+		exitFd:   make(chan neverCloseThisFile, 1),
+		Fds:      newFds(files),
 	}
 
-	return s, nil
+	go u.run()
+
+	return u, nil
 }
 
 // Ready signals that the current process is ready to accept connections.
@@ -123,93 +125,103 @@ func (u *Upgrader) Stop() {
 		// Interrupt any running Upgrade(), and
 		// prevent new upgrade from happening.
 		close(u.stopC)
-
-		// Make sure exitC is closed if no upgrade was running.
-		u.upgradeSem <- struct{}{}
-		select {
-		case <-u.exitC:
-		default:
-			close(u.exitC)
-		}
-		<-u.upgradeSem
-
-		u.Fds.closeUsed()
 	})
 }
 
 // Upgrade triggers an upgrade.
 func (u *Upgrader) Upgrade() error {
-	// Acquire semaphore, but don't block. This allows informing
-	// the user that they are doing too many upgrade requests.
+	response := make(chan error, 1)
 	select {
-	default:
-		return errors.New("upgrade in progress")
-	case u.upgradeSem <- struct{}{}:
-	}
-
-	defer func() {
-		<-u.upgradeSem
-	}()
-
-	// Make sure we're still ok to perform an upgrade.
-	select {
+	case <-u.stopC:
+		return errors.New("terminating")
 	case <-u.exitC:
 		return errors.New("already upgraded")
-	default:
+	case u.upgradeC <- response:
 	}
+
+	return <-response
+}
+
+var errNotReady = errors.New("process is not ready yet")
+
+func (u *Upgrader) run() {
+	defer close(u.exitC)
+	defer u.Fds.closeUsed()
+
+	var (
+		parentExited <-chan struct{}
+		processReady = u.readyC
+	)
 
 	if u.parent != nil {
-		if u.parentErr != nil {
-			return u.parentErr
-		}
+		parentExited = u.parent.exited
+	}
 
-		// verify clean exit
+	for {
 		select {
-		case err := <-u.parent.exited:
-			if err != nil {
-				u.parentErr = err
-				return err
+		case <-parentExited:
+			parentExited = nil
+
+		case <-processReady:
+			processReady = nil
+
+		case <-u.stopC:
+			return
+
+		case request := <-u.upgradeC:
+			if processReady != nil {
+				request <- errNotReady
+				continue
 			}
 
-		default:
-			return errors.New("parent hasn't exited")
+			if parentExited != nil {
+				request <- errors.New("parent hasn't exited")
+				continue
+			}
+
+			file, err := u.doUpgrade()
+			request <- err
+
+			if err == nil {
+				// Save file in exitFd, so that it's only closed when the process
+				// exits. This signals to the new process that the old process
+				// has exited.
+				u.exitFd <- neverCloseThisFile{file}
+				return
+			}
 		}
 	}
+}
 
-	select {
-	case <-u.readyC:
-	default:
-		return errors.New("process is not ready")
-	}
-
+func (u *Upgrader) doUpgrade() (*os.File, error) {
 	child, err := startChild(u.env, u.Fds.copy())
 	if err != nil {
-		return errors.Wrap(err, "can't start child")
+		return nil, errors.Wrap(err, "can't start child")
 	}
 
 	readyTimeout := time.After(u.opts.UpgradeTimeout)
-	select {
-	case err := <-child.exitedC:
-		if err == nil {
-			return errors.Errorf("child %s exited", child)
+	for {
+		select {
+		case request := <-u.upgradeC:
+			request <- errors.New("upgrade in progress")
+
+		case err := <-child.result:
+			if err == nil {
+				return nil, errors.Errorf("child %s exited", child)
+			}
+			return nil, errors.Wrapf(err, "child %s exited", child)
+
+		case <-u.stopC:
+			child.Kill()
+			return nil, errors.New("terminating")
+
+		case <-readyTimeout:
+			child.Kill()
+			return nil, errors.Errorf("new child %s timed out", child)
+
+		case file := <-child.ready:
+			return file, nil
 		}
-		return errors.Wrapf(err, "child %s exited", child)
-
-	case <-u.stopC:
-		child.Kill()
-		return errors.New("terminating")
-
-	case <-readyTimeout:
-		child.Kill()
-		return errors.Errorf("new child %s timed out", child)
-
-	case file := <-child.readyC:
-		// Save file in exitFd, so that it's only closed when the process
-		// exits. This signals to the new process that the old process
-		// has exited.
-		u.exitFd = neverCloseThisFile{file}
-		close(u.exitC)
-		return nil
 	}
 }
 

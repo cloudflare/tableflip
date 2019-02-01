@@ -16,7 +16,8 @@ const (
 
 type parent struct {
 	wr     *os.File
-	exited <-chan error
+	result <-chan error
+	exited <-chan struct{}
 }
 
 func newParent(env *env) (*parent, map[fileName]*file, error) {
@@ -48,21 +49,24 @@ func newParent(env *env) (*parent, map[fileName]*file, error) {
 		}
 	}
 
-	exited := make(chan error, 1)
+	result := make(chan error, 1)
+	exited := make(chan struct{})
 	go func() {
 		defer rd.Close()
 
 		n, err := io.Copy(ioutil.Discard, rd)
 		if n != 0 {
-			exited <- errors.New("unexpected data from parent process")
+			err = errors.New("unexpected data from parent process")
 		} else if err != nil {
-			exited <- errors.Wrap(err, "unexpected error while waiting for parent to exit")
+			err = errors.Wrap(err, "unexpected error while waiting for parent to exit")
 		}
+		result <- err
 		close(exited)
 	}()
 
 	return &parent{
 		wr:     wr,
+		result: result,
 		exited: exited,
 	}, files, nil
 }
