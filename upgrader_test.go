@@ -2,6 +2,7 @@ package tableflip
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -242,6 +243,47 @@ func TestUpgraderConcurrentUpgrade(t *testing.T) {
 	}
 
 	new.exit(nil)
+}
+
+func TestUpgraderWaitForParent(t *testing.T) {
+	t.Parallel()
+
+	env, procs := testEnv()
+	child, err := startChild(env, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	proc := <-procs
+	u, err := newUpgrader(&proc.env, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer u.Stop()
+
+	if err := u.Ready(); err != nil {
+		t.Fatal(err)
+	}
+
+	exited := make(chan error, 1)
+	go func() {
+		exited <- u.WaitForParent(context.Background())
+	}()
+
+	select {
+	case <-exited:
+		t.Fatal("Returned before parent exited")
+	case <-time.After(time.Second):
+	}
+
+	readyFile := <-child.ready
+	if err := readyFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := <-exited; err != nil {
+		t.Fatal("Unexpected error:", err)
+	}
 }
 
 func TestUpgraderReady(t *testing.T) {
