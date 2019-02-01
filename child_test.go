@@ -15,7 +15,7 @@ func TestChildExit(t *testing.T) {
 
 	proc := <-procs
 	proc.exit(nil)
-	if err := <-child.exitedC; err != nil {
+	if err := <-child.result; err != nil {
 		t.Error("Wait returns non-nil error:", err)
 	}
 }
@@ -48,10 +48,11 @@ func TestChildNotReady(t *testing.T) {
 
 	proc := <-procs
 	proc.exit(nil)
-	<-child.exitedC
+	<-child.result
+	<-child.exited
 
 	select {
-	case <-child.readyC:
+	case <-child.ready:
 		t.Error("Child signals readiness without pipe being closed")
 	default:
 	}
@@ -69,7 +70,7 @@ func TestChildReady(t *testing.T) {
 	if _, _, err := proc.notify(); err != nil {
 		t.Fatal("Can't notify:", err)
 	}
-	<-child.readyC
+	<-child.ready
 	proc.exit(nil)
 }
 

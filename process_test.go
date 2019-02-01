@@ -84,5 +84,5 @@ func (tp *testProcess) notify() (map[fileName]*file, <-chan error, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return files, parent.exited, parent.sendReady()
+	return files, parent.result, parent.sendReady()
 }
