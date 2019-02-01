@@ -1,6 +1,7 @@
 package tableflip
 
 import (
+	"context"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -29,6 +30,7 @@ type Upgrader struct {
 	*env
 	opts      Options
 	parent    *parent
+	parentErr chan error
 	readyOnce sync.Once
 	readyC    chan struct{}
 	stopOnce  sync.Once
@@ -74,15 +76,16 @@ func newUpgrader(env *env, opts Options) (*Upgrader, error) {
 	}
 
 	u := &Upgrader{
-		env:      env,
-		opts:     opts,
-		parent:   parent,
-		readyC:   make(chan struct{}),
-		stopC:    make(chan struct{}),
-		upgradeC: make(chan chan<- error),
-		exitC:    make(chan struct{}),
-		exitFd:   make(chan neverCloseThisFile, 1),
-		Fds:      newFds(files),
+		env:       env,
+		opts:      opts,
+		parent:    parent,
+		parentErr: make(chan error, 1),
+		readyC:    make(chan struct{}),
+		stopC:     make(chan struct{}),
+		upgradeC:  make(chan chan<- error),
+		exitC:     make(chan struct{}),
+		exitFd:    make(chan neverCloseThisFile, 1),
+		Fds:       newFds(files),
 	}
 
 	go u.run()
@@ -126,6 +129,29 @@ func (u *Upgrader) Stop() {
 		// prevent new upgrade from happening.
 		close(u.stopC)
 	})
+}
+
+// WaitForParent blocks until the parent has exited.
+//
+// Returns an error if the parent misbehaved during shutdown.
+func (u *Upgrader) WaitForParent(ctx context.Context) error {
+	if u.parent == nil {
+		return nil
+	}
+
+	var err error
+	select {
+	case err = <-u.parent.result:
+	case err = <-u.parentErr:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	// This is a bit cheeky, since it means that multiple
+	// calls to WaitForParent resolve in sequence, but that
+	// probably doesn't matter.
+	u.parentErr <- err
+	return err
 }
 
 // Upgrade triggers an upgrade.
