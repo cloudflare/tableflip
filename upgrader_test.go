@@ -85,6 +85,18 @@ func TestMain(m *testing.M) {
 		pid.Close()
 	}
 
+	parent, err := upg.Fds.File("hasParent")
+	if err != nil {
+		panic(err)
+	}
+
+	if parent != nil {
+		if _, err := io.WriteString(parent, fmt.Sprint(upg.HasParent())); err != nil {
+			panic(err)
+		}
+		parent.Close()
+	}
+
 	for _, name := range names {
 		file, err := upg.Fds.File(name)
 		if err != nil {
@@ -120,6 +132,17 @@ func TestUpgraderOnOS(t *testing.T) {
 		t.Fatal(err)
 	}
 	wPid.Close()
+
+	rHasParent, wHasParent, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rHasParent.Close()
+
+	if err := u.Fds.AddFile("hasParent", wHasParent); err != nil {
+		t.Fatal(err)
+	}
+	wHasParent.Close()
 
 	var readers []*os.File
 	defer func() {
@@ -168,6 +191,14 @@ func TestUpgraderOnOS(t *testing.T) {
 
 	if int(binary.LittleEndian.Uint64(buf)) == os.Getpid() {
 		t.Error("Child did not execute in new process")
+	}
+
+	hasParentBytes, err := ioutil.ReadAll(rHasParent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(hasParentBytes, []byte("true")) {
+		t.Fatal("Child did not recognize parent")
 	}
 
 	for i, name := range names {
@@ -243,6 +274,17 @@ func TestUpgraderConcurrentUpgrade(t *testing.T) {
 	}
 
 	new.exit(nil)
+}
+
+func TestHasParent(t *testing.T) {
+	t.Parallel()
+
+	u := newTestUpgrader(Options{})
+	defer u.Stop()
+
+	if u.HasParent() {
+		t.Fatal("First process cannot have a parent")
+	}
 }
 
 func TestUpgraderWaitForParent(t *testing.T) {
