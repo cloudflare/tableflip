@@ -154,6 +154,11 @@ func (u *Upgrader) WaitForParent(ctx context.Context) error {
 	return err
 }
 
+// HasParent checks if the current process is an upgrade or the first invocation.
+func (u *Upgrader) HasParent() bool {
+	return u.parent != nil
+}
+
 // Upgrade triggers an upgrade.
 func (u *Upgrader) Upgrade() error {
 	response := make(chan error, 1)
