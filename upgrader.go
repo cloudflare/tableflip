@@ -262,6 +262,20 @@ type neverCloseThisFile struct {
 
 func writePIDFile(path string) error {
 	dir, file := filepath.Split(path)
+
+	// if dir is empty, the user properly specified just the name
+	// of the pid file expecting it to be created in the current work directory
+	if dir == "" {
+		var err error
+		dir, err = os.Getwd()
+		if err != nil {
+			// if we could not determine current working directory
+			// continue with empty dir and let ioutil.TempFile choose
+			// a default
+			dir = ""
+		}
+	}
+
 	fh, err := ioutil.TempFile(dir, file)
 	if err != nil {
 		return err

@@ -378,6 +378,35 @@ func TestReadyWritesPIDFile(t *testing.T) {
 	}
 }
 
+func TestWritePidFileWithoutPath(t *testing.T) {
+	pidFile := "tableflip-test.pid"
+
+	err := writePIDFile(pidFile)
+	if err != nil {
+		t.Fatal("Could not write pidfile:", err)
+	}
+	defer os.Remove(pidFile)
+
+	// lets see if we are able to read the file back
+	fh, err := os.Open(pidFile)
+	if err != nil {
+		t.Fatal("PID file doesn't exist:", err)
+	}
+	defer fh.Close()
+
+	// just to be sure: check the pid for correctness
+	// if something failed at a previous run we could be reading
+	// a bogus pidfile
+	var pid int
+	if _, err := fmt.Fscan(fh, &pid); err != nil {
+		t.Fatal("Can't read PID:", err)
+	}
+
+	if pid != os.Getpid() {
+		t.Error("PID doesn't match")
+	}
+}
+
 func BenchmarkUpgrade(b *testing.B) {
 	for _, n := range []int{4, 400, 4000} {
 		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
