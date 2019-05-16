@@ -27,6 +27,8 @@ type Options struct {
 
 // Upgrader handles zero downtime upgrades and passing files between processes.
 type Upgrader struct {
+	*Fds
+
 	*env
 	opts      Options
 	parent    *parent
@@ -38,8 +40,6 @@ type Upgrader struct {
 	upgradeC  chan chan<- error
 	exitC     chan struct{}
 	exitFd    chan neverCloseThisFile
-
-	Fds *Fds
 }
 
 var (
