@@ -68,6 +68,12 @@ func TestFdsListener(t *testing.T) {
 		t.Error("Unix.Close() unlinked socketPath:", err)
 	}
 
+	abstractUnix, err := parent.Listen("unix", "@tableflip-test-r5N5j")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer abstractUnix.Close()
+
 	child := newFds(parent.copy())
 	ln, err := child.Listener(addr.Network(), addr.String())
 	if err != nil {

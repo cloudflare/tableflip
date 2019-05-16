@@ -274,6 +274,11 @@ func (f *Fds) closeInherited() {
 }
 
 func unlinkUnixSocket(path string) error {
+	if strings.HasPrefix(path, "@") {
+		// Don't unlink sockets using the abstract namespace.
+		return nil
+	}
+
 	info, err := os.Stat(path)
 	if err != nil {
 		return err
