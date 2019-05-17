@@ -34,6 +34,10 @@ func (name fileName) String() string {
 	return strings.Join(name[:], ":")
 }
 
+func (name fileName) isUnixListener() bool {
+	return name[0] == listenKind && (name[1] == "unix" || name[1] == "unixpacket")
+}
+
 // file works around the fact that it's not possible
 // to get the fd from an os.File without putting it into
 // blocking mode.
@@ -193,7 +197,7 @@ func (f *Fds) addConnLocked(kind, network, addr string, conn syscall.Conn) error
 	key := fileName{kind, network, addr}
 	file, err := dupConn(conn, key)
 	if err != nil {
-		return errors.Wrapf(err, "can't dup listener %s %s", network, addr)
+		return errors.Wrapf(err, "can't dup %s (%s %s)", kind, network, addr)
 	}
 
 	delete(f.inherited, key)
@@ -263,7 +267,7 @@ func (f *Fds) closeInherited() {
 	defer f.mu.Unlock()
 
 	for key, file := range f.inherited {
-		if key[0] == listenKind && (key[1] == "unix" || key[1] == "unixpacket") {
+		if key.isUnixListener() {
 			// Remove inherited but unused Unix sockets from the file system.
 			// This undoes the effect of SetUnlinkOnClose(false).
 			_ = unlinkUnixSocket(key[2])
@@ -296,6 +300,22 @@ func (f *Fds) closeUsed() {
 	defer f.mu.Unlock()
 
 	for _, file := range f.used {
+		_ = file.Close()
+	}
+	f.used = make(map[fileName]*file)
+}
+
+func (f *Fds) closeAndRemoveUsed() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	for key, file := range f.used {
+		if key.isUnixListener() {
+			// Remove used Unix Domain Sockets if we are shutting
+			// down without having done an upgrade.
+			// This undoes the effect of SetUnlinkOnClose(false).
+			_ = unlinkUnixSocket(key[2])
+		}
 		_ = file.Close()
 	}
 	f.used = make(map[fileName]*file)
