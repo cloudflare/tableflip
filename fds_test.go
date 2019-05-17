@@ -90,6 +90,28 @@ func TestFdsListener(t *testing.T) {
 	}
 }
 
+func TestFdsUnixListener(t *testing.T) {
+	temp, err := ioutil.TempDir("", "tableflip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(temp)
+
+	fds := newFds(nil)
+
+	socketPath := filepath.Join(temp, "socket")
+	unix, err := fds.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unix.Close()
+
+	fds.closeAndRemoveUsed()
+	if _, err := os.Stat(socketPath); err == nil {
+		t.Error("Unix listeners are not removed")
+	}
+}
+
 func TestFdsConn(t *testing.T) {
 	unix, err := net.ListenUnixgram("unixgram", &net.UnixAddr{
 		Net:  "unixgram",

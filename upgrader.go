@@ -123,6 +123,11 @@ func (u *Upgrader) Exit() <-chan struct{} {
 
 // Stop prevents any more upgrades from happening, and closes
 // the exit channel.
+//
+// If this function is called before a call to Upgrade() has
+// succeeded, it is assumed that the process is being shut down
+// completely. All Unix sockets known to Upgrader.Fds are then
+// unlinked from the filesystem.
 func (u *Upgrader) Stop() {
 	u.stopOnce.Do(func() {
 		// Interrupt any running Upgrade(), and
@@ -177,7 +182,6 @@ var errNotReady = errors.New("process is not ready yet")
 
 func (u *Upgrader) run() {
 	defer close(u.exitC)
-	defer u.Fds.closeUsed()
 
 	var (
 		parentExited <-chan struct{}
@@ -197,6 +201,7 @@ func (u *Upgrader) run() {
 			processReady = nil
 
 		case <-u.stopC:
+			u.Fds.closeAndRemoveUsed()
 			return
 
 		case request := <-u.upgradeC:
@@ -218,6 +223,7 @@ func (u *Upgrader) run() {
 				// exits. This signals to the new process that the old process
 				// has exited.
 				u.exitFd <- neverCloseThisFile{file}
+				u.Fds.closeUsed()
 				return
 			}
 		}
