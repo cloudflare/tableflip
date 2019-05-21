@@ -66,6 +66,10 @@ func New(opts Options) (upg *Upgrader, err error) {
 }
 
 func newUpgrader(env *env, opts Options) (*Upgrader, error) {
+	if initialWD == "" {
+		return nil, errors.New("couldn't determine initial working directory")
+	}
+
 	parent, files, err := newParent(env)
 	if err != nil {
 		return nil, err
