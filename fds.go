@@ -3,6 +3,7 @@ package tableflip
 import (
 	"net"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -278,7 +279,7 @@ func (f *Fds) closeInherited() {
 }
 
 func unlinkUnixSocket(path string) error {
-	if strings.HasPrefix(path, "@") {
+	if runtime.GOOS == "linux" && strings.HasPrefix(path, "@") {
 		// Don't unlink sockets using the abstract namespace.
 		return nil
 	}
