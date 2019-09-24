@@ -16,8 +16,6 @@ has the following goals:
 * Crashing during initialisation is OK
 * Only a single upgrade is ever run in parallel
 
-`tableflip` does not work on Windows.
-
 It's easy to get started:
 
 ```Go
