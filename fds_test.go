@@ -5,16 +5,12 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 )
 
 func TestFdsListen(t *testing.T) {
-	socketPath, cleanup := tempSocket(t)
-	defer cleanup()
-
 	addrs := [][2]string{
-		{"unix", socketPath},
+		{"unix", ""},
 		{"tcp", "localhost:0"},
 	}
 
@@ -32,17 +28,6 @@ func TestFdsListen(t *testing.T) {
 	}
 }
 
-func tempSocket(t *testing.T) (string, func()) {
-	t.Helper()
-
-	temp, err := ioutil.TempDir("", "tableflip")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return filepath.Join(temp, "socket"), func() { os.RemoveAll(temp) }
-}
-
 func TestFdsListener(t *testing.T) {
 	addr := &net.TCPAddr{
 		IP:   net.ParseIP("127.0.0.1"),
@@ -55,8 +40,13 @@ func TestFdsListener(t *testing.T) {
 	}
 	defer tcp.Close()
 
-	socketPath, cleanup := tempSocket(t)
-	defer cleanup()
+	temp, err := ioutil.TempDir("", "tableflip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(temp)
+
+	socketPath := filepath.Join(temp, "socket")
 	unix, err := net.Listen("unix", socketPath)
 	if err != nil {
 		t.Fatal(err)
@@ -78,14 +68,11 @@ func TestFdsListener(t *testing.T) {
 		t.Error("Unix.Close() unlinked socketPath:", err)
 	}
 
-	// Linux supports the abstract namespace for domain sockets.
-	if runtime.GOOS == "linux" {
-		abstractUnix, err := parent.Listen("unix", "@tableflip-test-r5N5j")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer abstractUnix.Close()
+	abstractUnix, err := parent.Listen("unix", "@tableflip-test-r5N5j")
+	if err != nil {
+		t.Fatal(err)
 	}
+	defer abstractUnix.Close()
 
 	child := newFds(parent.copy())
 	ln, err := child.Listener(addr.Network(), addr.String())
@@ -126,11 +113,9 @@ func TestFdsUnixListener(t *testing.T) {
 }
 
 func TestFdsConn(t *testing.T) {
-	socketPath, cleanup := tempSocket(t)
-	defer cleanup()
 	unix, err := net.ListenUnixgram("unixgram", &net.UnixAddr{
 		Net:  "unixgram",
-		Name: socketPath,
+		Name: "",
 	})
 	if err != nil {
 		t.Fatal(err)
