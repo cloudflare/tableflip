@@ -66,10 +66,6 @@ func New(opts Options) (upg *Upgrader, err error) {
 }
 
 func newUpgrader(env *env, opts Options) (*Upgrader, error) {
-	if initialWD == "" {
-		return nil, errors.New("couldn't determine initial working directory")
-	}
-
 	parent, files, err := newParent(env)
 	if err != nil {
 		return nil, err
@@ -277,17 +273,6 @@ type neverCloseThisFile struct {
 
 func writePIDFile(path string) error {
 	dir, file := filepath.Split(path)
-
-	// if dir is empty, the user probably specified just the name
-	// of the pid file expecting it to be created in the current work directory
-	if dir == "" {
-		dir = initialWD
-	}
-
-	if dir == "" {
-		return errors.New("empty initial working directory")
-	}
-
 	fh, err := ioutil.TempFile(dir, file)
 	if err != nil {
 		return err
