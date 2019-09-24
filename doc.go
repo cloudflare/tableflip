@@ -17,8 +17,7 @@
 //    Description=Service using tableflip
 //
 //    [Service]
-//    ExecStart=/path/to/binary -some-flag /path/to/pid-file
-//    ExecReload=/bin/kill -HUP $MAINPID
+//    ExecStart=/path/to/binary
 //    PIDFile=/path/to/pid-file
 //
 // Then pass /path/to/pid-file to New. You can use systemd-run to
@@ -33,7 +32,7 @@
 //
 // Requires at least Go 1.9, since there is a race condition on the
 // pipes used for communication between parent and child.
-//
+// 
 // If you're seeing "can't start process: no such file or directory",
 // you're probably using "go run main.go", for graceful reloads to work,
 // you'll need use "go build main.go".
