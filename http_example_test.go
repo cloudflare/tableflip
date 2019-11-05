@@ -45,7 +45,8 @@ func Example_httpShutdown() {
 		}
 	}()
 
-	ln, err := upg.Fds.Listen("tcp", *listenAddr)
+	// Listen must be called before Ready
+	ln, err := upg.Listen("tcp", *listenAddr)
 	if err != nil {
 		log.Fatalln("Can't listen:", err)
 	}
