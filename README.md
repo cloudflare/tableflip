@@ -47,6 +47,18 @@ if err := upg.Ready(); err != nil {
 
 Please see the more elaborate [graceful shutdown with net/http](http_example_test.go) example.
 
-## Logging to `journald`
+## Integration with `systemd`
+
+```
+[Unit]
+Description=Service using tableflip
+
+[Service]
+ExecStart=/path/to/binary -some-flag /path/to/pid-file
+ExecReload=/bin/kill -HUP $MAINPID
+PIDFile=/path/to/pid-file
+```
+
+See the [documentation](https://godoc.org/github.com/cloudflare/tableflip) as well.
 
 The logs of a process using `tableflip` may go missing due to a [bug in journald](https://github.com/systemd/systemd/issues/13708). You can work around this by logging directly to journald, for example by using [go-systemd/journal](https://godoc.org/github.com/coreos/go-systemd/journal) and looking for the [$JOURNAL_STREAM](https://www.freedesktop.org/software/systemd/man/systemd.exec.html#$JOURNAL_STREAM) environment variable.
