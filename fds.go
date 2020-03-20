@@ -1,6 +1,7 @@
 package tableflip
 
 import (
+	"context"
 	"net"
 	"os"
 	"runtime"
@@ -9,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/pkg/errors"
+	"golang.org/x/sys/unix"
 )
 
 // Listener can be shared between processes.
@@ -92,7 +94,7 @@ func (f *Fds) Listen(network, addr string) (net.Listener, error) {
 		return ln, nil
 	}
 
-	ln, err = net.Listen(network, addr)
+	ln, err = getListener(network, addr)
 	if err != nil {
 		return nil, errors.Wrap(err, "can't create new listener")
 	}
@@ -109,6 +111,26 @@ func (f *Fds) Listen(network, addr string) (net.Listener, error) {
 	}
 
 	return ln, nil
+}
+
+func getListener(network, addr string) (net.Listener, error) {
+	if runtime.GOOS == "linux" {
+		lc := net.ListenConfig{
+			Control: func(network, address string, c syscall.RawConn) error {
+				var opErr error
+				err := c.Control(func(fd uintptr) {
+					opErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_REUSEPORT, 1)
+				})
+				if err != nil {
+					return err
+				}
+				return opErr
+			},
+		}
+
+		return lc.Listen(context.Background(), network, addr)
+	}
+	return net.Listen(network, addr)
 }
 
 // Listener returns an inherited listener or nil.

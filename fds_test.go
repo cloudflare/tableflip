@@ -1,6 +1,7 @@
 package tableflip
 
 import (
+	"fmt"
 	"io/ioutil"
 	"net"
 	"os"
@@ -29,6 +30,25 @@ func TestFdsListen(t *testing.T) {
 			t.Fatal("Missing listener", addr)
 		}
 		ln.Close()
+	}
+}
+
+func TestFdsListen_ReusePort(t *testing.T) {
+	fds := newFds(nil)
+
+	ln, err := fds.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, port, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = fds.Listen("tcp", fmt.Sprintf(":%s", port))
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
