@@ -38,4 +38,11 @@
 // you're probably using "go run main.go", for graceful reloads to work,
 // you'll need use "go build main.go".
 //
+// Tableflip does not work on Windows, because Windows does not have
+// the mechanisms required to support this method of graceful restarting.
+// It is still possible to include this package in code that runs on Windows,
+// which may be necessary in certain development circumstances, but it will not
+// provide zero downtime upgrades when running on Windows. See the `testing`
+// package for an example of how to use it.
+//
 package tableflip
