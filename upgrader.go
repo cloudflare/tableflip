@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -53,6 +54,10 @@ var (
 func New(opts Options) (upg *Upgrader, err error) {
 	stdEnvMu.Lock()
 	defer stdEnvMu.Unlock()
+
+	if !isSupportedOS() {
+		return nil, &ErrNotSupported{}
+	}
 
 	if stdEnvUpgrader != nil {
 		return nil, errors.New("tableflip: only a single Upgrader allowed")
@@ -170,6 +175,10 @@ func (u *Upgrader) HasParent() bool {
 
 // Upgrade triggers an upgrade.
 func (u *Upgrader) Upgrade() error {
+	if !isSupportedOS() {
+		return &ErrNotSupported{}
+	}
+
 	response := make(chan error, 1)
 	select {
 	case <-u.stopC:
@@ -302,4 +311,11 @@ func writePIDFile(path string) error {
 	}
 
 	return os.Rename(fh.Name(), path)
+}
+
+// Check if this is a supported OS.
+// That is currently all Unix-like OS's.
+// At the moment, we assume that is everything except Windows.
+func isSupportedOS() bool {
+	return runtime.GOOS != "windows"
 }
