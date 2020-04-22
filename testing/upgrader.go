@@ -6,15 +6,14 @@ package testing
 
 import (
 	"context"
-	"errors"
+
+	"github.com/cloudflare/tableflip"
 )
 
 // Upgrader has all the methods of tableflip.Upgrader, but they don't
 // actually do anything special.
 type Upgrader struct {
 	*Fds
-
-	exitC chan struct{}
 }
 
 // New creates a new stub Upgrader.
@@ -29,7 +28,6 @@ func New() (*Upgrader, error) {
 func newStubUpgrader() *Upgrader {
 	return &Upgrader{
 		&Fds{},
-		make(chan struct{}),
 	}
 }
 
@@ -43,8 +41,9 @@ func (u *Upgrader) Ready() error {
 
 // Exit returns a channel which is closed when the process should
 // exit.
+// We can return nil here because reading from a nil channel blocks
 func (u *Upgrader) Exit() <-chan struct{} {
-	return u.exitC
+	return nil
 }
 
 // Stop does nothing, since there will never be anything to stop
@@ -65,5 +64,5 @@ func (u *Upgrader) HasParent() bool {
 }
 
 func (u *Upgrader) Upgrade() error {
-	return errors.New("tableflip: this platform does not support upgrade")
+	return tableflip.ErrNotSupported
 }
