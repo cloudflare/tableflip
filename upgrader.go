@@ -48,6 +48,8 @@ var (
 	stdEnvUpgrader *Upgrader
 )
 
+var ErrNotSupported = errors.New("tableflip: platform does not support graceful restart")
+
 // New creates a new Upgrader. Files are passed from the parent and may be empty.
 //
 // Only the first call to this function will succeed.
@@ -56,7 +58,7 @@ func New(opts Options) (upg *Upgrader, err error) {
 	defer stdEnvMu.Unlock()
 
 	if !isSupportedOS() {
-		return nil, &ErrNotSupported{}
+		return nil, ErrNotSupported
 	}
 
 	if stdEnvUpgrader != nil {
@@ -175,10 +177,6 @@ func (u *Upgrader) HasParent() bool {
 
 // Upgrade triggers an upgrade.
 func (u *Upgrader) Upgrade() error {
-	if !isSupportedOS() {
-		return &ErrNotSupported{}
-	}
-
 	response := make(chan error, 1)
 	select {
 	case <-u.stopC:

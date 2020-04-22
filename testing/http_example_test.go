@@ -38,31 +38,29 @@ func Example_httpShutdown() {
 	log.SetPrefix(fmt.Sprintf("%d ", os.Getpid()))
 
 	var upg upgrader
-	upgradeSupported := true
 	upg, err := tableflip.New(tableflip.Options{
 		PIDFile: *pidFile,
 	})
-	if errors.Is(err, tableflip.ErrNotSupported{}) {
-		upgradeSupported = false
+	if errors.Is(err, tableflip.ErrNotSupported) {
 		upg, _ = testing.New()
 	} else if err != nil {
 		panic(err)
 	}
 	defer upg.Stop()
 
-	if upgradeSupported {
-		// Do an upgrade on SIGHUP
-		go func() {
-			sig := make(chan os.Signal, 1)
-			signal.Notify(sig, syscall.SIGHUP)
-			for range sig {
-				err := upg.Upgrade()
-				if err != nil {
-					log.Println("Upgrade failed:", err)
-				}
+	// Do an upgrade on SIGHUP
+	// NOTE: With `testing.Upgrader` this goroutine is useless
+	// You may choose to enclose it inside an `if` statement block.
+	go func() {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, syscall.SIGHUP)
+		for range sig {
+			err := upg.Upgrade()
+			if err != nil {
+				log.Println("Upgrade failed:", err)
 			}
-		}()
-	}
+		}
+	}()
 
 	// Listen must be called before Ready
 	ln, err := upg.Listen("tcp", *listenAddr)
