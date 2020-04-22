@@ -63,6 +63,8 @@ func (u *Upgrader) HasParent() bool {
 	return false
 }
 
+// Upgrade always returns an error in the stub implementation,
+// since nothing can be done.
 func (u *Upgrader) Upgrade() error {
 	return tableflip.ErrNotSupported
 }
