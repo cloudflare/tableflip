@@ -1,14 +1,13 @@
 package tableflip
 
 import (
+	"fmt"
 	"net"
 	"os"
 	"runtime"
 	"strings"
 	"sync"
 	"syscall"
-
-	"github.com/pkg/errors"
 )
 
 // Listener can be shared between processes.
@@ -94,12 +93,12 @@ func (f *Fds) Listen(network, addr string) (net.Listener, error) {
 
 	ln, err = net.Listen(network, addr)
 	if err != nil {
-		return nil, errors.Wrap(err, "can't create new listener")
+		return nil, fmt.Errorf("can't create new listener: %s", err)
 	}
 
 	if _, ok := ln.(Listener); !ok {
 		ln.Close()
-		return nil, errors.Errorf("%T doesn't implement tableflip.Listener", ln)
+		return nil, fmt.Errorf("%T doesn't implement tableflip.Listener", ln)
 	}
 
 	err = f.addListenerLocked(network, addr, ln.(Listener))
@@ -130,7 +129,7 @@ func (f *Fds) listenerLocked(network, addr string) (net.Listener, error) {
 
 	ln, err := net.FileListener(file.File)
 	if err != nil {
-		return nil, errors.Wrapf(err, "can't inherit listener %s %s", network, addr)
+		return nil, fmt.Errorf("can't inherit listener %s %s: %s", network, addr, err)
 	}
 
 	delete(f.inherited, key)
@@ -176,7 +175,7 @@ func (f *Fds) Conn(network, addr string) (net.Conn, error) {
 
 	conn, err := net.FileConn(file.File)
 	if err != nil {
-		return nil, errors.Wrapf(err, "can't inherit connection %s %s", network, addr)
+		return nil, fmt.Errorf("can't inherit connection %s %s: %s", network, addr, err)
 	}
 
 	delete(f.inherited, key)
@@ -198,7 +197,7 @@ func (f *Fds) addConnLocked(kind, network, addr string, conn syscall.Conn) error
 	key := fileName{kind, network, addr}
 	file, err := dupConn(conn, key)
 	if err != nil {
-		return errors.Wrapf(err, "can't dup %s (%s %s)", kind, network, addr)
+		return fmt.Errorf("can't dup %s (%s %s): %s", kind, network, addr, err)
 	}
 
 	delete(f.inherited, key)
@@ -336,7 +335,7 @@ func dupConn(conn syscall.Conn, name fileName) (*file, error) {
 		dup, duperr = dupFd(fd, name)
 	})
 	if err != nil {
-		return nil, errors.Wrap(err, "can't access fd")
+		return nil, fmt.Errorf("can't access fd: %s", err)
 	}
 	return dup, duperr
 }
