@@ -64,6 +64,10 @@ var names = []string{"zaphod", "beeblebrox"}
 
 func TestMain(m *testing.M) {
 	upg, err := New(Options{})
+	if errors.Is(err, ErrNotSupported) {
+		fmt.Fprintln(os.Stderr, "Skipping tests, OS is not supported")
+		os.Exit(0)
+	}
 	if err != nil {
 		panic(err)
 	}
