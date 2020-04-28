@@ -2,11 +2,11 @@ package tableflip
 
 import (
 	"encoding/gob"
+	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
-
-	"github.com/pkg/errors"
 )
 
 const (
@@ -31,7 +31,7 @@ func newParent(env *env) (*parent, map[fileName]*file, error) {
 	var names [][]string
 	dec := gob.NewDecoder(rd)
 	if err := dec.Decode(&names); err != nil {
-		return nil, nil, errors.Wrap(err, "can't decode names from parent process")
+		return nil, nil, fmt.Errorf("can't decode names from parent process: %s", err)
 	}
 
 	files := make(map[fileName]*file)
@@ -58,7 +58,7 @@ func newParent(env *env) (*parent, map[fileName]*file, error) {
 		if n != 0 {
 			err = errors.New("unexpected data from parent process")
 		} else if err != nil {
-			err = errors.Wrap(err, "unexpected error while waiting for parent to exit")
+			err = fmt.Errorf("unexpected error while waiting for parent to exit: %s", err)
 		}
 		result <- err
 		close(exited)
@@ -74,7 +74,7 @@ func newParent(env *env) (*parent, map[fileName]*file, error) {
 func (ps *parent) sendReady() error {
 	defer ps.wr.Close()
 	if _, err := ps.wr.Write([]byte{notifyReady}); err != nil {
-		return errors.Wrap(err, "can't notify parent process")
+		return fmt.Errorf("can't notify parent process: %s", err)
 	}
 	return nil
 }
