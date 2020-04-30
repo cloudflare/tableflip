@@ -16,6 +16,12 @@ type Listener interface {
 	syscall.Conn
 }
 
+// PacketConn can be shared between processes.
+type PacketConn interface {
+	net.PacketConn
+	syscall.Conn
+}
+
 // Conn can be shared between processes.
 type Conn interface {
 	net.Conn
@@ -24,6 +30,7 @@ type Conn interface {
 
 const (
 	listenKind = "listener"
+	packetKind = "packet"
 	connKind   = "conn"
 	fdKind     = "fd"
 )
@@ -34,8 +41,14 @@ func (name fileName) String() string {
 	return strings.Join(name[:], ":")
 }
 
-func (name fileName) isUnixListener() bool {
-	return name[0] == listenKind && (name[1] == "unix" || name[1] == "unixpacket")
+func (name fileName) isUnix() bool {
+	if name[0] == listenKind && (name[1] == "unix" || name[1] == "unixpacket") {
+		return true
+	}
+	if name[0] == packetKind && (name[1] == "unixgram") {
+		return true
+	}
+	return false
 }
 
 // file works around the fact that it's not possible
@@ -157,7 +170,77 @@ func (f *Fds) addListenerLocked(network, addr string, ln Listener) error {
 		ifc.SetUnlinkOnClose(false)
 	}
 
-	return f.addConnLocked(listenKind, network, addr, ln)
+	return f.addSyscallConnLocked(listenKind, network, addr, ln)
+}
+
+// ListenPacket returns a packet conn inherited from the parent process, or creates a new one.
+func (f *Fds) ListenPacket(network, addr string) (net.PacketConn, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	conn, err := f.packetConnLocked(network, addr)
+	if err != nil {
+		return nil, err
+	}
+
+	if conn != nil {
+		return conn, nil
+	}
+
+	conn, err = net.ListenPacket(network, addr)
+	if err != nil {
+		return nil, fmt.Errorf("can't create new listener: %s", err)
+	}
+
+	if _, ok := conn.(PacketConn); !ok {
+		return nil, fmt.Errorf("%T doesn't implement tableflip.PacketConn", conn)
+	}
+
+	err = f.addSyscallConnLocked(packetKind, network, addr, conn.(PacketConn))
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+
+	return conn, nil
+}
+
+// PacketConn returns an inherited packet connection or nil.
+//
+// It is safe to close the returned packet connection.
+func (f *Fds) PacketConn(network, addr string) (net.PacketConn, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.packetConnLocked(network, addr)
+}
+
+// AddPacketConn adds a PacketConn.
+//
+// It is safe to close conn after calling the method.
+// Any existing packet connection with the same address is overwitten.
+func (f *Fds) AddPacketConn(network, addr string, conn PacketConn) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.addSyscallConnLocked(packetKind, network, addr, conn)
+}
+
+func (f *Fds) packetConnLocked(network, addr string) (net.PacketConn, error) {
+	key := fileName{packetKind, network, addr}
+	file := f.inherited[key]
+	if file == nil {
+		return nil, nil
+	}
+
+	conn, err := net.FilePacketConn(file.File)
+	if err != nil {
+		return nil, fmt.Errorf("can't inherit packet conn %s %s: %s", network, addr, err)
+	}
+
+	delete(f.inherited, key)
+	f.used[key] = file
+	return conn, nil
 }
 
 // Conn returns an inherited connection or nil.
@@ -190,10 +273,10 @@ func (f *Fds) AddConn(network, addr string, conn Conn) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	return f.addConnLocked(connKind, network, addr, conn)
+	return f.addSyscallConnLocked(connKind, network, addr, conn)
 }
 
-func (f *Fds) addConnLocked(kind, network, addr string, conn syscall.Conn) error {
+func (f *Fds) addSyscallConnLocked(kind, network, addr string, conn syscall.Conn) error {
 	key := fileName{kind, network, addr}
 	file, err := dupConn(conn, key)
 	if err != nil {
@@ -267,7 +350,7 @@ func (f *Fds) closeInherited() {
 	defer f.mu.Unlock()
 
 	for key, file := range f.inherited {
-		if key.isUnixListener() {
+		if key.isUnix() {
 			// Remove inherited but unused Unix sockets from the file system.
 			// This undoes the effect of SetUnlinkOnClose(false).
 			_ = unlinkUnixSocket(key[2])
@@ -310,7 +393,7 @@ func (f *Fds) closeAndRemoveUsed() {
 	defer f.mu.Unlock()
 
 	for key, file := range f.used {
-		if key.isUnixListener() {
+		if key.isUnix() {
 			// Remove used Unix Domain Sockets if we are shutting
 			// down without having done an upgrade.
 			// This undoes the effect of SetUnlinkOnClose(false).
