@@ -121,8 +121,21 @@ func childProcess(upg *Upgrader) error {
 		file.Close()
 	}
 
+	rExit, err := upg.Fds.File("rExit")
+	if err != nil {
+		return err
+	}
+
+	// Ready closes all inherited but unused files.
 	if err := upg.Ready(); err != nil {
 		return fmt.Errorf("can't signal ready: %s", err)
+	}
+
+	// Block until the parent is done with us. Returning an
+	// error here won't make the parent fail, so don't bother.
+	if rExit != nil {
+		var b [1]byte
+		rExit.Read(b[:])
 	}
 
 	return nil
@@ -159,6 +172,11 @@ func TestUpgraderOnOS(t *testing.T) {
 
 	addPipe("wState", wState)
 
+	rExit, wExit := pipe()
+	defer wExit.Close()
+
+	addPipe("rExit", rExit)
+
 	var readers []*os.File
 	defer func() {
 		for _, r := range readers {
@@ -187,6 +205,9 @@ func TestUpgraderOnOS(t *testing.T) {
 			t.Fatal("Upgrade failed:", err)
 		}
 	}
+
+	// Tell child it's OK to exit now.
+	wExit.Close()
 
 	// Close copies of write pipes, so that
 	// reads below return EOF.
