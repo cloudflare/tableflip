@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestFdsListen(t *testing.T) {
+func TestFdsAddListener(t *testing.T) {
 	socketPath, cleanup := tempSocket(t)
 	defer cleanup()
 
@@ -19,14 +19,13 @@ func TestFdsListen(t *testing.T) {
 	}
 
 	fds := newFds(nil)
-
 	for _, addr := range addrs {
-		ln, err := fds.Listen(addr[0], addr[1])
+		ln, err := net.Listen(addr[0], addr[1])
 		if err != nil {
 			t.Fatal(err)
 		}
-		if ln == nil {
-			t.Fatal("Missing listener", addr)
+		if err := fds.AddListener(addr[0], addr[1], ln.(Listener)); err != nil {
+			t.Fatalf("Can't add %s listener: %s", addr[0], err)
 		}
 		ln.Close()
 	}
@@ -43,86 +42,105 @@ func tempSocket(t *testing.T) (string, func()) {
 	return filepath.Join(temp, "socket"), func() { os.RemoveAll(temp) }
 }
 
-func TestFdsListener(t *testing.T) {
-	addr := &net.TCPAddr{
-		IP:   net.ParseIP("127.0.0.1"),
-		Port: 0,
-	}
-
-	tcp, err := net.ListenTCP("tcp", addr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer tcp.Close()
-
+func TestFdsListen(t *testing.T) {
 	socketPath, cleanup := tempSocket(t)
 	defer cleanup()
-	unix, err := net.Listen("unix", socketPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer unix.Close()
 
-	parent := newFds(nil)
-	if err := parent.AddListener(addr.Network(), addr.String(), tcp); err != nil {
-		t.Fatal("Can't add listener:", err)
-	}
-	tcp.Close()
-
-	if err := parent.AddListener("unix", socketPath, unix.(Listener)); err != nil {
-		t.Fatal("Can't add listener:", err)
-	}
-	unix.Close()
-
-	if _, err := os.Stat(socketPath); err != nil {
-		t.Error("Unix.Close() unlinked socketPath:", err)
+	addrs := [][2]string{
+		{"tcp", "localhost:0"},
+		{"unix", socketPath},
 	}
 
 	// Linux supports the abstract namespace for domain sockets.
 	if runtime.GOOS == "linux" {
-		abstractUnix, err := parent.Listen("unix", "@tableflip-test-r5N5j")
+		addrs = append(addrs,
+			[2]string{"unixpacket", socketPath + "Unixpacket"},
+			[2]string{"unix", ""},
+			[2]string{"unixpacket", ""},
+		)
+	}
+
+	parent := newFds(nil)
+	for _, addr := range addrs {
+		ln, err := parent.Listen(addr[0], addr[1])
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("Can't create %s listener: %s", addr[0], addr[1])
 		}
-		defer abstractUnix.Close()
+		ln.Close()
 	}
 
 	child := newFds(parent.copy())
-	ln, err := child.Listener(addr.Network(), addr.String())
-	if err != nil {
-		t.Fatal("Can't get listener:", err)
-	}
-	if ln == nil {
-		t.Fatal("Missing listener")
-	}
-	ln.Close()
-
-	child.closeInherited()
-	if _, err := os.Stat(socketPath); err == nil {
-		t.Error("closeInherited() did not unlink socketPath")
+	for _, addr := range addrs {
+		ln, err := child.Listener(addr[0], addr[1])
+		if err != nil {
+			t.Fatal("Can't get listener:", err)
+		}
+		if ln == nil {
+			t.Fatal("Missing listener")
+		}
+		ln.Close()
 	}
 }
 
-func TestFdsUnixListener(t *testing.T) {
-	temp, err := ioutil.TempDir("", "tableflip")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(temp)
+func TestFdsRemoveUnix(t *testing.T) {
+	socketPath, cleanup := tempSocket(t)
+	defer cleanup()
 
-	fds := newFds(nil)
-
-	socketPath := filepath.Join(temp, "socket")
-	unix, err := fds.Listen("unix", socketPath)
-	if err != nil {
-		t.Fatal(err)
+	addrs := [][2]string{
+		{"unix", socketPath},
 	}
-	unix.Close()
 
-	fds.closeAndRemoveUsed()
-	if _, err := os.Stat(socketPath); err == nil {
-		t.Error("Unix listeners are not removed")
+	if runtime.GOOS == "linux" {
+		addrs = append(addrs,
+			[2]string{"unixpacket", socketPath + "Unixpacket"},
+		)
 	}
+
+	makeFds := func(t *testing.T) *Fds {
+		fds := newFds(nil)
+		for _, addr := range addrs {
+			c, err := fds.Listen(addr[0], addr[1])
+			if err != nil {
+				t.Fatalf("Can't listen on socket %v: %v", addr, err)
+			}
+			c.Close()
+			if _, err := os.Stat(addr[1]); err != nil {
+				t.Errorf("%s Close() unlinked socket: %s", addr[0], err)
+			}
+		}
+		return fds
+	}
+
+	t.Run("closeAndRemoveUsed", func(t *testing.T) {
+		parent := makeFds(t)
+		parent.closeAndRemoveUsed()
+		for _, addr := range addrs {
+			if _, err := os.Stat(addr[1]); err == nil {
+				t.Errorf("Used %s listeners are not removed", addr[0])
+			}
+		}
+	})
+
+	t.Run("closeInherited", func(t *testing.T) {
+		parent := makeFds(t)
+		child := newFds(parent.copy())
+		child.closeInherited()
+		for _, addr := range addrs {
+			if _, err := os.Stat(addr[1]); err == nil {
+				t.Errorf("Inherited but unused %s listeners are not removed", addr[0])
+			}
+		}
+	})
+
+	t.Run("closeUsed", func(t *testing.T) {
+		parent := makeFds(t)
+		parent.closeUsed()
+		for _, addr := range addrs {
+			if _, err := os.Stat(addr[1]); err != nil {
+				t.Errorf("Used %s listeners are removed", addr[0])
+			}
+		}
+	})
 }
 
 func TestFdsConn(t *testing.T) {
