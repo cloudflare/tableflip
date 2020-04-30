@@ -1,6 +1,7 @@
 package tableflip
 
 import (
+	"io"
 	"io/ioutil"
 	"net"
 	"os"
@@ -31,6 +32,28 @@ func TestFdsAddListener(t *testing.T) {
 	}
 }
 
+func TestFdsAddPacketConn(t *testing.T) {
+	socketPath, cleanup := tempSocket(t)
+	defer cleanup()
+
+	addrs := [][2]string{
+		{"unix", socketPath},
+		{"udp", "localhost:0"},
+	}
+
+	fds := newFds(nil)
+	for _, addr := range addrs {
+		conn, err := net.ListenPacket(addr[0], addr[1])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := fds.AddPacketConn(addr[0], addr[1], conn.(PacketConn)); err != nil {
+			t.Fatalf("Can't add %s listener: %s", addr[0], err)
+		}
+		conn.Close()
+	}
+}
+
 func tempSocket(t *testing.T) (string, func()) {
 	t.Helper()
 
@@ -48,7 +71,9 @@ func TestFdsListen(t *testing.T) {
 
 	addrs := [][2]string{
 		{"tcp", "localhost:0"},
+		{"udp", "localhost:0"},
 		{"unix", socketPath},
+		{"unixgram", socketPath + "Unixgram"},
 	}
 
 	// Linux supports the abstract namespace for domain sockets.
@@ -57,26 +82,45 @@ func TestFdsListen(t *testing.T) {
 			[2]string{"unixpacket", socketPath + "Unixpacket"},
 			[2]string{"unix", ""},
 			[2]string{"unixpacket", ""},
+			[2]string{"unixgram", ""},
 		)
 	}
 
+	var (
+		ln  io.Closer
+		err error
+	)
+
 	parent := newFds(nil)
 	for _, addr := range addrs {
-		ln, err := parent.Listen(addr[0], addr[1])
+		switch addr[0] {
+		case "udp", "unixgram":
+			ln, err = parent.ListenPacket(addr[0], addr[1])
+		default:
+			ln, err = parent.Listen(addr[0], addr[1])
+		}
 		if err != nil {
-			t.Fatalf("Can't create %s listener: %s", addr[0], addr[1])
+			t.Fatalf("Can't create %s listener: %s", addr[0], err)
+		}
+		if ln == nil {
+			t.Fatalf("Got a nil %s listener", addr[0])
 		}
 		ln.Close()
 	}
 
 	child := newFds(parent.copy())
 	for _, addr := range addrs {
-		ln, err := child.Listener(addr[0], addr[1])
+		switch addr[0] {
+		case "udp", "unixgram":
+			ln, err = child.PacketConn(addr[0], addr[1])
+		default:
+			ln, err = child.Listener(addr[0], addr[1])
+		}
 		if err != nil {
-			t.Fatal("Can't get listener:", err)
+			t.Fatalf("Can't get retrieve %s from child: %s", addr[0], err)
 		}
 		if ln == nil {
-			t.Fatal("Missing listener")
+			t.Fatalf("Missing %s listener", addr[0])
 		}
 		ln.Close()
 	}
@@ -88,6 +132,7 @@ func TestFdsRemoveUnix(t *testing.T) {
 
 	addrs := [][2]string{
 		{"unix", socketPath},
+		{"unixgram", socketPath + "Unixgram"},
 	}
 
 	if runtime.GOOS == "linux" {
@@ -99,7 +144,13 @@ func TestFdsRemoveUnix(t *testing.T) {
 	makeFds := func(t *testing.T) *Fds {
 		fds := newFds(nil)
 		for _, addr := range addrs {
-			c, err := fds.Listen(addr[0], addr[1])
+			var c io.Closer
+			var err error
+			if addr[0] == "unixgram" {
+				c, err = fds.ListenPacket(addr[0], addr[1])
+			} else {
+				c, err = fds.Listen(addr[0], addr[1])
+			}
 			if err != nil {
 				t.Fatalf("Can't listen on socket %v: %v", addr, err)
 			}
