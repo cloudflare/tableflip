@@ -3,7 +3,7 @@ package tableflip
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"io"
@@ -77,46 +77,55 @@ func TestMain(m *testing.M) {
 		os.Exit(m.Run())
 	}
 
-	pid, err := upg.Fds.File("pid")
+	if err := childProcess(upg); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		os.Exit(1)
+	}
+}
+
+type childState struct {
+	PID int
+}
+
+// Used by Benchmark and TestUpgraderOnOS
+func childProcess(upg *Upgrader) error {
+	if !upg.HasParent() {
+		return errors.New("Upgrader doesn't recognize parent")
+	}
+
+	wState, err := upg.Fds.File("wState")
 	if err != nil {
-		panic(err)
+		return err
 	}
-
-	if pid != nil {
-		buf := make([]byte, 8)
-		binary.LittleEndian.PutUint64(buf, uint64(os.Getpid()))
-		pid.Write(buf)
-		pid.Close()
-	}
-
-	parent, err := upg.Fds.File("hasParent")
-	if err != nil {
-		panic(err)
-	}
-
-	if parent != nil {
-		if _, err := io.WriteString(parent, fmt.Sprint(upg.HasParent())); err != nil {
-			panic(err)
+	if wState != nil {
+		state := &childState{
+			PID: os.Getpid(),
 		}
-		parent.Close()
+		if err := gob.NewEncoder(wState).Encode(state); err != nil {
+			return err
+		}
+		wState.Close()
 	}
 
 	for _, name := range names {
 		file, err := upg.Fds.File(name)
 		if err != nil {
-			panic(err)
+			return fmt.Errorf("can't get file %s: %s", name, err)
 		}
 		if file == nil {
 			continue
 		}
 		if _, err := io.WriteString(file, name); err != nil {
-			panic(err)
+			return fmt.Errorf("can't write to %s: %s", name, err)
 		}
+		file.Close()
 	}
 
 	if err := upg.Ready(); err != nil {
-		panic(err)
+		return fmt.Errorf("can't signal ready: %s", err)
 	}
+
+	return nil
 }
 
 func TestUpgraderOnOS(t *testing.T) {
@@ -126,27 +135,29 @@ func TestUpgraderOnOS(t *testing.T) {
 	}
 	defer u.Stop()
 
-	rPid, wPid, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rPid.Close()
+	pipe := func() (r, w *os.File) {
+		t.Helper()
 
-	if err := u.Fds.AddFile("pid", wPid); err != nil {
-		t.Fatal(err)
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r, w
 	}
-	wPid.Close()
 
-	rHasParent, wHasParent, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rHasParent.Close()
+	addPipe := func(name string, file *os.File) {
+		t.Helper()
 
-	if err := u.Fds.AddFile("hasParent", wHasParent); err != nil {
-		t.Fatal(err)
+		if err := u.Fds.AddFile(name, file); err != nil {
+			t.Fatal(err)
+		}
+		file.Close()
 	}
-	wHasParent.Close()
+
+	rState, wState := pipe()
+	defer rState.Close()
+
+	addPipe("wState", wState)
 
 	var readers []*os.File
 	defer func() {
@@ -156,16 +167,9 @@ func TestUpgraderOnOS(t *testing.T) {
 	}()
 
 	for _, name := range names {
-		r, w, err := os.Pipe()
-		if err != nil {
-			t.Fatal(err)
-		}
+		r, w := pipe()
+		addPipe(name, w)
 		readers = append(readers, r)
-
-		if err := u.Fds.AddFile(name, w); err != nil {
-			t.Fatal(err)
-		}
-		w.Close()
 	}
 
 	if err := u.Upgrade(); err == nil {
@@ -188,21 +192,13 @@ func TestUpgraderOnOS(t *testing.T) {
 	// reads below return EOF.
 	u.Stop()
 
-	buf := make([]byte, 8)
-	if _, err := rPid.Read(buf); err != nil {
-		t.Fatal(err)
+	var state childState
+	if err := gob.NewDecoder(rState).Decode(&state); err != nil {
+		t.Fatal("Can't decode state from child:", err)
 	}
 
-	if int(binary.LittleEndian.Uint64(buf)) == os.Getpid() {
+	if state.PID == os.Getpid() {
 		t.Error("Child did not execute in new process")
-	}
-
-	hasParentBytes, err := ioutil.ReadAll(rHasParent)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(hasParentBytes, []byte("true")) {
-		t.Fatal("Child did not recognize parent")
 	}
 
 	for i, name := range names {
