@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"os"
 	"strconv"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -280,6 +282,36 @@ func TestUpgraderTimeout(t *testing.T) {
 	}
 }
 
+func TestUpgraderListenConfig(t *testing.T) {
+	t.Parallel()
+
+	var listenConfigUsed bool
+	u := newTestUpgrader(Options{
+		ListenConfig: &net.ListenConfig{
+			Control: func(network, address string, c syscall.RawConn) error {
+				listenConfigUsed = true
+				return nil
+			},
+		},
+	})
+	defer u.Stop()
+
+	new, _ := u.upgradeProc(t)
+
+	go new.recvSignal(nil)
+
+	_, err := u.Listen("tcp", ":0")
+	if err != nil {
+		t.Errorf("Unexpected error from listen: %v", err)
+	}
+
+	if !listenConfigUsed {
+		t.Error("Expected ListenConfig to be called during Listen")
+	}
+
+	new.exit(nil)
+}
+
 func TestUpgraderConcurrentUpgrade(t *testing.T) {
 	t.Parallel()
 
@@ -473,7 +505,7 @@ func TestWritePidFileWithoutPath(t *testing.T) {
 func BenchmarkUpgrade(b *testing.B) {
 	for _, n := range []int{4, 400, 4000} {
 		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
-			fds := newFds(nil)
+			fds := newFds(nil, nil)
 			for i := 0; i < n; i += 2 {
 				r, w, err := os.Pipe()
 				if err != nil {

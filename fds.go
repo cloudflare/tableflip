@@ -1,6 +1,7 @@
 package tableflip
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -78,15 +79,22 @@ type Fds struct {
 	// NB: Files in these maps may be in blocking mode.
 	inherited map[fileName]*file
 	used      map[fileName]*file
+	lc        *net.ListenConfig
 }
 
-func newFds(inherited map[fileName]*file) *Fds {
+func newFds(inherited map[fileName]*file, lc *net.ListenConfig) *Fds {
 	if inherited == nil {
 		inherited = make(map[fileName]*file)
 	}
+
+	if lc == nil {
+		lc = &net.ListenConfig{}
+	}
+
 	return &Fds{
 		inherited: inherited,
 		used:      make(map[fileName]*file),
+		lc:        lc,
 	}
 }
 
@@ -104,7 +112,7 @@ func (f *Fds) Listen(network, addr string) (net.Listener, error) {
 		return ln, nil
 	}
 
-	ln, err = net.Listen(network, addr)
+	ln, err = f.lc.Listen(context.Background(), network, addr)
 	if err != nil {
 		return nil, fmt.Errorf("can't create new listener: %s", err)
 	}
@@ -187,7 +195,7 @@ func (f *Fds) ListenPacket(network, addr string) (net.PacketConn, error) {
 		return conn, nil
 	}
 
-	conn, err = net.ListenPacket(network, addr)
+	conn, err = f.lc.ListenPacket(context.Background(), network, addr)
 	if err != nil {
 		return nil, fmt.Errorf("can't create new listener: %s", err)
 	}

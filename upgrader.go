@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -24,6 +25,8 @@ type Options struct {
 	UpgradeTimeout time.Duration
 	// The PID of a ready process is written to this file.
 	PIDFile string
+	// ListenConfig is a custom ListenConfig. Defaults to an empty ListenConfig
+	ListenConfig *net.ListenConfig
 }
 
 // Upgrader handles zero downtime upgrades and passing files between processes.
@@ -96,7 +99,7 @@ func newUpgrader(env *env, opts Options) (*Upgrader, error) {
 		upgradeC:  make(chan chan<- error),
 		exitC:     make(chan struct{}),
 		exitFd:    make(chan neverCloseThisFile, 1),
-		Fds:       newFds(files),
+		Fds:       newFds(files, opts.ListenConfig),
 	}
 
 	go u.run()
