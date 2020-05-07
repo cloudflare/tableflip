@@ -19,7 +19,8 @@ func TestFdsAddListener(t *testing.T) {
 		{"tcp", "localhost:0"},
 	}
 
-	fds := newFds(nil)
+	fds := newFds(nil, nil)
+
 	for _, addr := range addrs {
 		ln, err := net.Listen(addr[0], addr[1])
 		if err != nil {
@@ -41,7 +42,7 @@ func TestFdsAddPacketConn(t *testing.T) {
 		{"udp", "localhost:0"},
 	}
 
-	fds := newFds(nil)
+	fds := newFds(nil, nil)
 	for _, addr := range addrs {
 		conn, err := net.ListenPacket(addr[0], addr[1])
 		if err != nil {
@@ -91,7 +92,7 @@ func TestFdsListen(t *testing.T) {
 		err error
 	)
 
-	parent := newFds(nil)
+	parent := newFds(nil, nil)
 	for _, addr := range addrs {
 		switch addr[0] {
 		case "udp", "unixgram":
@@ -108,7 +109,7 @@ func TestFdsListen(t *testing.T) {
 		ln.Close()
 	}
 
-	child := newFds(parent.copy())
+	child := newFds(parent.copy(), nil)
 	for _, addr := range addrs {
 		switch addr[0] {
 		case "udp", "unixgram":
@@ -142,7 +143,7 @@ func TestFdsRemoveUnix(t *testing.T) {
 	}
 
 	makeFds := func(t *testing.T) *Fds {
-		fds := newFds(nil)
+		fds := newFds(nil, nil)
 		for _, addr := range addrs {
 			var c io.Closer
 			var err error
@@ -174,7 +175,7 @@ func TestFdsRemoveUnix(t *testing.T) {
 
 	t.Run("closeInherited", func(t *testing.T) {
 		parent := makeFds(t)
-		child := newFds(parent.copy())
+		child := newFds(parent.copy(), nil)
 		child.closeInherited()
 		for _, addr := range addrs {
 			if _, err := os.Stat(addr[1]); err == nil {
@@ -205,13 +206,13 @@ func TestFdsConn(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	parent := newFds(nil)
+	parent := newFds(nil, nil)
 	if err := parent.AddConn("unixgram", "", unix); err != nil {
 		t.Fatal("Can't add conn:", err)
 	}
 	unix.Close()
 
-	child := newFds(parent.copy())
+	child := newFds(parent.copy(), nil)
 	conn, err := child.Conn("unixgram", "")
 	if err != nil {
 		t.Fatal("Can't get conn:", err)
@@ -229,13 +230,13 @@ func TestFdsFile(t *testing.T) {
 	}
 	defer r.Close()
 
-	parent := newFds(nil)
+	parent := newFds(nil, nil)
 	if err := parent.AddFile("test", w); err != nil {
 		t.Fatal("Can't add file:", err)
 	}
 	w.Close()
 
-	child := newFds(parent.copy())
+	child := newFds(parent.copy(), nil)
 	file, err := child.File("test")
 	if err != nil {
 		t.Fatal("Can't get file:", err)
