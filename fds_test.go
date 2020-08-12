@@ -127,6 +127,75 @@ func TestFdsListen(t *testing.T) {
 	}
 }
 
+func TestFdsListenWithCallback(t *testing.T) {
+	socketPath, cleanup := tempSocket(t)
+	defer cleanup()
+
+	addrs := [][2]string{
+		{"tcp", "localhost:0"},
+		{"udp", "localhost:0"},
+		{"unix", socketPath},
+		{"unixgram", socketPath + "Unixgram"},
+	}
+	parent := newFds(nil, nil)
+
+	var (
+		ln  io.Closer
+		err error
+	)
+
+	called := false
+	packetCb := func(network, addr string) (net.PacketConn, error) {
+		called = true
+		return net.ListenPacket(network, addr)
+	}
+	listenerCb := func(network, addr string) (net.Listener, error) {
+		called = true
+		return net.Listen(network, addr)
+	}
+
+	for _, addr := range addrs {
+		called = false
+		switch addr[0] {
+		case "udp", "unixgram":
+			ln, err = parent.ListenPacketWithCallback(addr[0], addr[1], packetCb)
+		default:
+			ln, err = parent.ListenWithCallback(addr[0], addr[1], listenerCb)
+		}
+		if err != nil {
+			t.Fatalf("Can't create %s listener: %s", addr[0], err)
+		}
+		if ln == nil {
+			t.Fatalf("Got a nil %s listener", addr[0])
+		}
+		if !called {
+			t.Fatalf("Callback not called for new %s listener", addr[0])
+		}
+		ln.Close()
+	}
+
+	child := newFds(parent.copy(), nil)
+	for _, addr := range addrs {
+		called = false
+		switch addr[0] {
+		case "udp", "unixgram":
+			ln, err = child.ListenPacketWithCallback(addr[0], addr[1], packetCb)
+		default:
+			ln, err = child.ListenWithCallback(addr[0], addr[1], listenerCb)
+		}
+		if err != nil {
+			t.Fatalf("Can't get retrieve %s from child: %s", addr[0], err)
+		}
+		if ln == nil {
+			t.Fatalf("Missing %s listener", addr[0])
+		}
+		if called {
+			t.Fatalf("Callback called for inherited %s listener", addr[0])
+		}
+		ln.Close()
+	}
+}
+
 func TestFdsRemoveUnix(t *testing.T) {
 	socketPath, cleanup := tempSocket(t)
 	defer cleanup()

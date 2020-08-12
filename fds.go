@@ -131,6 +131,44 @@ func (f *Fds) Listen(network, addr string) (net.Listener, error) {
 	return ln, nil
 }
 
+// ListenWithCallback returns a listener inherited from the parent process,
+// or calls the supplied callback to create a new one.
+//
+// This should be used in case some customization has to be applied to create the
+// connection. Note that the callback must not use the underlying `Fds` object
+// as it will be locked during the call.
+func (f *Fds) ListenWithCallback(network, addr string, callback func(network, addr string) (net.Listener, error)) (net.Listener, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	ln, err := f.listenerLocked(network, addr)
+	if err != nil {
+		return nil, err
+	}
+
+	if ln != nil {
+		return ln, nil
+	}
+
+	ln, err = callback(network, addr)
+	if err != nil {
+		return nil, fmt.Errorf("can't create new listener: %s", err)
+	}
+
+	if _, ok := ln.(Listener); !ok {
+		ln.Close()
+		return nil, fmt.Errorf("%T doesn't implement tableflip.Listener", ln)
+	}
+
+	err = f.addListenerLocked(network, addr, ln.(Listener))
+	if err != nil {
+		ln.Close()
+		return nil, err
+	}
+
+	return ln, nil
+}
+
 // Listener returns an inherited listener or nil.
 //
 // It is safe to close the returned listener.
@@ -196,6 +234,43 @@ func (f *Fds) ListenPacket(network, addr string) (net.PacketConn, error) {
 	}
 
 	conn, err = f.lc.ListenPacket(context.Background(), network, addr)
+	if err != nil {
+		return nil, fmt.Errorf("can't create new listener: %s", err)
+	}
+
+	if _, ok := conn.(PacketConn); !ok {
+		return nil, fmt.Errorf("%T doesn't implement tableflip.PacketConn", conn)
+	}
+
+	err = f.addSyscallConnLocked(packetKind, network, addr, conn.(PacketConn))
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+
+	return conn, nil
+}
+
+// ListenPacketWithCallback returns a packet conn inherited from the parent process,
+// or calls the supplied callback to create a new one.
+//
+// This should be used in case some customization has to be applied to create the
+// connection. Note that the callback must not use the underlying `Fds` object
+// as it will be locked during the call.
+func (f *Fds) ListenPacketWithCallback(network, addr string, callback func(network, addr string) (net.PacketConn, error)) (net.PacketConn, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	conn, err := f.packetConnLocked(network, addr)
+	if err != nil {
+		return nil, err
+	}
+
+	if conn != nil {
+		return conn, nil
+	}
+
+	conn, err = callback(network, addr)
 	if err != nil {
 		return nil, fmt.Errorf("can't create new listener: %s", err)
 	}
