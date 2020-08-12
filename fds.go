@@ -98,37 +98,13 @@ func newFds(inherited map[fileName]*file, lc *net.ListenConfig) *Fds {
 	}
 }
 
+func (f *Fds) newListener(network, addr string) (net.Listener, error) {
+	return f.lc.Listen(context.Background(), network, addr)
+}
+
 // Listen returns a listener inherited from the parent process, or creates a new one.
 func (f *Fds) Listen(network, addr string) (net.Listener, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	ln, err := f.listenerLocked(network, addr)
-	if err != nil {
-		return nil, err
-	}
-
-	if ln != nil {
-		return ln, nil
-	}
-
-	ln, err = f.lc.Listen(context.Background(), network, addr)
-	if err != nil {
-		return nil, fmt.Errorf("can't create new listener: %s", err)
-	}
-
-	if _, ok := ln.(Listener); !ok {
-		ln.Close()
-		return nil, fmt.Errorf("%T doesn't implement tableflip.Listener", ln)
-	}
-
-	err = f.addListenerLocked(network, addr, ln.(Listener))
-	if err != nil {
-		ln.Close()
-		return nil, err
-	}
-
-	return ln, nil
+	return f.ListenWithCallback(network, addr, f.newListener)
 }
 
 // ListenWithCallback returns a listener inherited from the parent process,
@@ -219,36 +195,13 @@ func (f *Fds) addListenerLocked(network, addr string, ln Listener) error {
 	return f.addSyscallConnLocked(listenKind, network, addr, ln)
 }
 
+func (f *Fds) newPacketConn(network, addr string) (net.PacketConn, error) {
+	return f.lc.ListenPacket(context.Background(), network, addr)
+}
+
 // ListenPacket returns a packet conn inherited from the parent process, or creates a new one.
 func (f *Fds) ListenPacket(network, addr string) (net.PacketConn, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	conn, err := f.packetConnLocked(network, addr)
-	if err != nil {
-		return nil, err
-	}
-
-	if conn != nil {
-		return conn, nil
-	}
-
-	conn, err = f.lc.ListenPacket(context.Background(), network, addr)
-	if err != nil {
-		return nil, fmt.Errorf("can't create new listener: %s", err)
-	}
-
-	if _, ok := conn.(PacketConn); !ok {
-		return nil, fmt.Errorf("%T doesn't implement tableflip.PacketConn", conn)
-	}
-
-	err = f.addSyscallConnLocked(packetKind, network, addr, conn.(PacketConn))
-	if err != nil {
-		conn.Close()
-		return nil, err
-	}
-
-	return conn, nil
+	return f.ListenPacketWithCallback(network, addr, f.newPacketConn)
 }
 
 // ListenPacketWithCallback returns a packet conn inherited from the parent process,
