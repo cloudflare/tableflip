@@ -356,7 +356,7 @@ func (f *Fds) File(name string) (*os.File, error) {
 func (f *Fds) AddFile(name string, file *os.File) error {
 	key := fileName{fdKind, name}
 
-	dup, err := dupFile(file, key)
+	dup, err := dupConn(file, key)
 	if err != nil {
 		return err
 	}
