@@ -1,0 +1,39 @@
+# Anytime we push to any branch
+on: push
+
+jobs:
+  linux:
+    name: Linux
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Set up Go 1.x
+      uses: actions/setup-go@v2
+      with:
+        go-version: '^1.15'
+
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v2
+
+    - name: Check lint
+      # gofmt doesn't report any changes
+      run: test -z $(gofmt -l ./ | tee /dev/stderr)
+
+    - name: Run tests
+      run: go test ./...
+
+  macos:
+    name: macOS
+    runs-on: macOS-latest
+
+    steps:
+    - name: Set up Go 1.x
+      uses: actions/setup-go@v2
+      with:
+        go-version: '^1.15'
+
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v2
+
+    - name: Run tests
+      run: go test ./...
