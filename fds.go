@@ -75,8 +75,7 @@ func newFile(fd uintptr, name fileName) *file {
 // Fds holds all file descriptors inherited from the
 // parent process.
 type Fds struct {
-	mu sync.Mutex
-	// NB: Files in these maps may be in blocking mode.
+	mu        sync.Mutex
 	inherited map[fileName]*file
 	used      map[fileName]*file
 	lc        *net.ListenConfig
@@ -350,9 +349,6 @@ func (f *Fds) File(name string) (*os.File, error) {
 }
 
 // AddFile adds a file.
-//
-// Until Go 1.12, file will be in blocking mode
-// after this call.
 func (f *Fds) AddFile(name string, file *os.File) error {
 	key := fileName{fdKind, name}
 
@@ -457,4 +453,23 @@ func dupConn(conn syscall.Conn, name fileName) (*file, error) {
 		return nil, fmt.Errorf("can't access fd: %s", err)
 	}
 	return dup, duperr
+}
+
+// sysConnFd retrieves the fd for a syscall.Conn.
+//
+// Don't close the conn while using the fd.
+func sysConnFd(conn syscall.Conn) (uintptr, error) {
+	raw, err := conn.SyscallConn()
+	if err != nil {
+		return 0, err
+	}
+
+	var fd uintptr
+	err = raw.Control(func(fdArg uintptr) {
+		fd = fdArg
+	})
+	if err != nil {
+		return 0, fmt.Errorf("can't access fd: %s", err)
+	}
+	return fd, nil
 }

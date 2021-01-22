@@ -1,10 +1,71 @@
 package tableflip
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
+	"testing"
+
+	"golang.org/x/sys/unix"
 )
+
+func TestNewOSProcess(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+
+	if !isNonblock(t, r) {
+		t.Fatal("Read pipe is blocking")
+	}
+
+	proc, err := newOSProcess("cat", nil, []*os.File{r}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := proc.Signal(os.Kill); err != nil {
+		t.Fatal("Can't signal:", err)
+	}
+
+	var exitErr *exec.ExitError
+	if err := proc.Wait(); !errors.As(err, &exitErr) {
+		t.Fatalf("Wait should return an ExitError after sending os.Kill, have %T: %s", err, err)
+	}
+
+	if err := proc.Wait(); err == nil {
+		t.Fatal("Waiting a second time should return an error")
+	}
+
+	if !isNonblock(t, r) {
+		t.Fatal("Read pipe is blocking after newOSProcess")
+	}
+}
+
+func isNonblock(tb testing.TB, file *os.File) (nonblocking bool) {
+	tb.Helper()
+
+	raw, err := file.SyscallConn()
+	if err != nil {
+		tb.Fatal("SyscallConn:", err)
+	}
+
+	err = raw.Control(func(fd uintptr) {
+		flags, err := unix.FcntlInt(fd, unix.F_GETFL, 0)
+		if err != nil {
+			tb.Fatal("IsNonblock:", err)
+		}
+		nonblocking = flags&unix.O_NONBLOCK > 0
+	})
+	if err != nil {
+		tb.Fatal("Control:", err)
+	}
+	return
+}
 
 type testProcess struct {
 	fds     []*os.File
