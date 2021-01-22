@@ -41,9 +41,14 @@ func startChild(env *env, passedFiles map[fileName]*file) (*child, error) {
 	}
 
 	// Copy environment and append the notification env vars
-	environ := append([]string(nil), env.environ()...)
-	environ = append(environ,
-		fmt.Sprintf("%s=yes", sentinelEnvVar))
+	sentinel := fmt.Sprintf("%s=yes", sentinelEnvVar)
+	var environ []string
+	for _, val := range env.environ() {
+		if val != sentinel {
+			environ = append(environ, val)
+		}
+	}
+	environ = append(environ, sentinel)
 
 	proc, err := env.newProc(os.Args[0], os.Args[1:], fds, environ)
 	if err != nil {
