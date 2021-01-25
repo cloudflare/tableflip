@@ -11,7 +11,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func TestNewOSProcess(t *testing.T) {
+func TestFilesAreNonblocking(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -43,6 +43,19 @@ func TestNewOSProcess(t *testing.T) {
 
 	if !isNonblock(t, r) {
 		t.Fatal("Read pipe is blocking after newOSProcess")
+	}
+}
+
+func TestArgumentsArePassedCorrectly(t *testing.T) {
+	proc, err := newOSProcess("printf", []string{""}, nil, nil)
+	if err != nil {
+		t.Fatal("Can't execute printf:", err)
+	}
+
+	// If the argument handling is wrong we'll call printf without any arguments.
+	// In that case printf exits non-zero.
+	if err = proc.Wait(); err != nil {
+		t.Fatal("printf exited non-zero:", err)
 	}
 }
 
