@@ -12,18 +12,28 @@ import (
 )
 
 func TestFilesAreNonblocking(t *testing.T) {
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
+	pipe := func() (r, w *os.File) {
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			r.Close()
+			w.Close()
+		})
+		return r, w
 	}
-	defer r.Close()
-	defer w.Close()
 
+	// Set up our own blocking stdin since CI runs tests with stdin closed.
+	rStdin, _ := pipe()
+	rStdin.Fd()
+
+	r, _ := pipe()
 	if !isNonblock(t, r) {
 		t.Fatal("Read pipe is blocking")
 	}
 
-	proc, err := newOSProcess("cat", nil, []*os.File{r}, nil)
+	proc, err := newOSProcess("cat", nil, []*os.File{rStdin, os.Stdout, os.Stderr, r}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +57,7 @@ func TestFilesAreNonblocking(t *testing.T) {
 }
 
 func TestArgumentsArePassedCorrectly(t *testing.T) {
-	proc, err := newOSProcess("printf", []string{""}, nil, nil)
+	proc, err := newOSProcess("printf", []string{""}, []*os.File{os.Stdin, os.Stdout, os.Stderr}, nil)
 	if err != nil {
 		t.Fatal("Can't execute printf:", err)
 	}
@@ -103,7 +113,7 @@ func newTestProcess(fds []*os.File, envstr []string) (*testProcess, error) {
 		fds,
 		env{
 			newFile: func(fd uintptr, name string) *os.File {
-				return fds[fd-3]
+				return fds[fd]
 			},
 			getenv: func(key string) string {
 				return environ[key]

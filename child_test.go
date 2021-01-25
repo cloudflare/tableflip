@@ -83,8 +83,8 @@ func TestChildPassedFds(t *testing.T) {
 	}
 
 	in := map[fileName]*file{
-		fileName{"r"}: newFile(r.Fd(), fileName{"r"}),
-		fileName{"w"}: newFile(w.Fd(), fileName{"w"}),
+		{"r"}: newFile(r.Fd(), fileName{"r"}),
+		{"w"}: newFile(w.Fd(), fileName{"w"}),
 	}
 
 	if _, err := startChild(env, in); err != nil {
@@ -92,13 +92,13 @@ func TestChildPassedFds(t *testing.T) {
 	}
 
 	proc := <-procs
-	if len(proc.fds) != 2+2 {
-		t.Error("Expected 4 files, got", len(proc.fds))
-	}
-
 	out, _, err := proc.notify()
 	if err != nil {
 		t.Fatal("Notify failed:", err)
+	}
+
+	if len(out) != len(in) {
+		t.Errorf("Expected %d files, got %d", len(in), len(out))
 	}
 
 	for name, inFd := range in {

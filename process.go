@@ -21,13 +21,12 @@ type osProcess struct {
 	finished bool
 }
 
-func newOSProcess(executable string, args []string, extraFiles []*os.File, env []string) (process, error) {
+func newOSProcess(executable string, args []string, files []*os.File, env []string) (process, error) {
 	executable, err := exec.LookPath(executable)
 	if err != nil {
 		return nil, err
 	}
 
-	files := append([]*os.File{os.Stdin, os.Stdout, os.Stderr}, extraFiles...)
 	fds := make([]uintptr, 0, len(files))
 	for _, file := range files {
 		fd, err := sysConnFd(file)
