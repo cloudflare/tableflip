@@ -31,7 +31,7 @@ func startChild(env *env, passedFiles map[fileName]*file) (*child, error) {
 	}
 
 	// Copy passed fds and append the notification pipe
-	fds := []*os.File{readyW, namesR}
+	fds := []*os.File{os.Stdin, os.Stdout, os.Stderr, readyW, namesR}
 	var fdNames [][]string
 	for name, file := range passedFiles {
 		nameSlice := make([]string, len(name))
