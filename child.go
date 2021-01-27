@@ -50,7 +50,7 @@ func startChild(env *env, passedFiles map[fileName]*file) (*child, error) {
 	}
 	environ = append(environ, sentinel)
 
-	proc, err := env.newProc(os.Args[0], os.Args[1:], fds, environ)
+	proc, err := env.newProc(os.Args[0], os.Args[:], fds, environ)
 	if err != nil {
 		readyR.Close()
 		readyW.Close()
