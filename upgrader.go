@@ -147,6 +147,12 @@ func (u *Upgrader) Stop() {
 		// Interrupt any running Upgrade(), and
 		// prevent new upgrade from happening.
 		close(u.stopC)
+
+		stdEnvMu.Lock()
+		defer stdEnvMu.Unlock()
+
+		// Remove from global env so that new instance can be created
+		stdEnvUpgrader = nil
 	})
 }
 
