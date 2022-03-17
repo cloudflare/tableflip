@@ -323,6 +323,36 @@ func (f *Fds) addSyscallConnLocked(kind, network, addr string, conn syscall.Conn
 	return nil
 }
 
+// Files returns all inherited files and mark them as used.
+//
+// The descriptors may be in blocking mode.
+func (f *Fds) Files() ([]*os.File, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	var files []*os.File
+
+	for key, file := range f.inherited {
+		if key[0] != fdKind {
+			continue
+		}
+
+		// Make a copy of the file, since we don't want to
+		// allow the caller to invalidate fds in f.inherited.
+		dup, err := dupFd(file.fd, key)
+		if err != nil {
+			return nil, err
+		}
+
+		f.used[key] = file
+		delete(f.inherited, key)
+
+		files = append(files, dup.File)
+	}
+
+	return files, nil
+}
+
 // File returns an inherited file or nil.
 //
 // The descriptor may be in blocking mode.
