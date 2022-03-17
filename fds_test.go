@@ -315,3 +315,62 @@ func TestFdsFile(t *testing.T) {
 	}
 	file.Close()
 }
+
+func TestFdsFiles(t *testing.T) {
+	r1, w1, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r1.Close()
+
+	r2, w2, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r2.Close()
+
+	testcases := []struct {
+		f        *os.File
+		name     string
+		expected string
+	}{
+		{
+			w1,
+			"test1",
+			"fd:test1:",
+		},
+		{
+			w2,
+			"test2",
+			"fd:test2:",
+		},
+	}
+
+	parent := newFds(nil, nil)
+	for _, tc := range testcases {
+		if err := parent.AddFile(tc.name, tc.f); err != nil {
+			t.Fatal("Can't add file:", err)
+		}
+		tc.f.Close()
+	}
+
+	child := newFds(parent.copy(), nil)
+	files, err := child.Files()
+	if err != nil {
+		t.Fatal("Can't get inherited files:", err)
+	}
+
+	if len(files) != len(testcases) {
+		t.Fatalf("Expected %d files, got %d", len(testcases), len(files))
+	}
+
+	for i, ff := range files {
+		tc := testcases[i]
+
+		if ff.Name() != tc.expected {
+			t.Errorf("Expected file %q, got %q", tc.expected, ff.Name())
+		}
+
+		ff.Close()
+	}
+}
