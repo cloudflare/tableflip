@@ -17,7 +17,7 @@ jobs:
 
     - name: Check lint
       # gofmt doesn't report any changes
-      run: test -z $(gofmt -l ./ | tee /dev/stderr)
+      run: test -z "$(gofmt -l ./ | tee /dev/stderr)"
 
     - name: Run tests
       run: go test ./...
