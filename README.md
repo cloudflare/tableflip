@@ -49,7 +49,7 @@ Please see the more elaborate [graceful shutdown with net/http](http_example_tes
 
 ## Integration with `systemd`
 
-```
+```text
 [Unit]
 Description=Service using tableflip
 
@@ -61,4 +61,9 @@ PIDFile=/path/to/pid-file
 
 See the [documentation](https://godoc.org/github.com/cloudflare/tableflip) as well.
 
-The logs of a process using `tableflip` may go missing due to a [bug in journald](https://github.com/systemd/systemd/issues/13708). You can work around this by logging directly to journald, for example by using [go-systemd/journal](https://godoc.org/github.com/coreos/go-systemd/journal) and looking for the [$JOURNAL_STREAM](https://www.freedesktop.org/software/systemd/man/systemd.exec.html#$JOURNAL_STREAM) environment variable.
+The logs of a process using `tableflip` may go missing due to a [bug in journald](https://github.com/systemd/systemd/issues/13708),
+which has been fixed by systemd v244 release. If you are running an older version
+of systemd, you can work around this by logging directly to journald, for example
+by using [go-systemd/journal](https://godoc.org/github.com/coreos/go-systemd/journal)
+and looking for the [$JOURNAL_STREAM](https://www.freedesktop.org/software/systemd/man/systemd.exec.html#$JOURNAL_STREAM)
+environment variable.
