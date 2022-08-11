@@ -5,7 +5,8 @@ package tableflip
 
 import (
 	"os"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 var stdEnv = &env{
@@ -13,5 +14,5 @@ var stdEnv = &env{
 	newFile:     os.NewFile,
 	environ:     os.Environ,
 	getenv:      os.Getenv,
-	closeOnExec: syscall.CloseOnExec,
+	closeOnExec: unix.CloseOnExec,
 }

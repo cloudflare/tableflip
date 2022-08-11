@@ -5,14 +5,15 @@ package tableflip
 
 import (
 	"fmt"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 func dupFd(fd uintptr, name fileName) (*file, error) {
-	dupfd, _, errno := syscall.Syscall(syscall.SYS_FCNTL, fd, syscall.F_DUPFD_CLOEXEC, 0)
-	if errno != 0 {
-		return nil, fmt.Errorf("can't dup fd using fcntl: %s", errno)
+	dupfd, err := unix.FcntlInt(fd, unix.F_DUPFD_CLOEXEC, 0)
+	if err != nil {
+		return nil, fmt.Errorf("can't dup fd using fcntl: %s", err)
 	}
 
-	return newFile(dupfd, name), nil
+	return newFile(uintptr(dupfd), name), nil
 }
