@@ -263,11 +263,15 @@ func (u *Upgrader) doUpgrade() (*os.File, error) {
 			return nil, fmt.Errorf("child %s exited: %s", child, err)
 
 		case <-u.stopC:
-			child.Kill()
+			if err = child.Kill(); err != nil {
+				return nil, fmt.Errorf("terminating child: %w", err)
+			}
 			return nil, errors.New("terminating")
 
 		case <-readyTimeout:
-			child.Kill()
+			if err = child.Kill(); err != nil {
+				return nil, fmt.Errorf("terminating child: %w", err)
+			}
 			return nil, fmt.Errorf("new child %s timed out", child)
 
 		case file := <-child.ready:

@@ -30,7 +30,12 @@ func TestChildKill(t *testing.T) {
 
 	proc := <-procs
 
-	go child.Kill()
+	go func() {
+		if err := child.Kill(); err != nil {
+			t.Errorf("Failed to kill child: %s", err)
+		}
+	}()
+
 	if sig := proc.recvSignal(nil); sig != os.Kill {
 		t.Errorf("Received %v instead of os.Kill", sig)
 	}
