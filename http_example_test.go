@@ -77,5 +77,5 @@ func Example_httpShutdown() {
 	})
 
 	// Wait for connections to drain.
-	server.Shutdown(context.Background())
+	_ = server.Shutdown(context.Background())
 }

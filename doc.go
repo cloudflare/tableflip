@@ -13,18 +13,18 @@
 // To use this library with systemd you need to use the PIDFile option in the service
 // file.
 //
-//    [Unit]
-//    Description=Service using tableflip
+//	[Unit]
+//	Description=Service using tableflip
 //
-//    [Service]
-//    ExecStart=/path/to/binary -some-flag /path/to/pid-file
-//    ExecReload=/bin/kill -HUP $MAINPID
-//    PIDFile=/path/to/pid-file
+//	[Service]
+//	ExecStart=/path/to/binary -some-flag /path/to/pid-file
+//	ExecReload=/bin/kill -HUP $MAINPID
+//	PIDFile=/path/to/pid-file
 //
 // Then pass /path/to/pid-file to New. You can use systemd-run to
 // test your implementation:
 //
-//    systemd-run --user -p PIDFile=/path/to/pid-file /path/to/binary
+//	systemd-run --user -p PIDFile=/path/to/pid-file /path/to/binary
 //
 // systemd-run will print a unit name, which you can use with systemctl to
 // inspect the service.
@@ -44,5 +44,4 @@
 // which may be necessary in certain development circumstances, but it will not
 // provide zero downtime upgrades when running on Windows. See the `testing`
 // package for an example of how to use it.
-//
 package tableflip
