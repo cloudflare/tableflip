@@ -1,4 +1,4 @@
-package tableflip_test
+package examples_test
 
 import (
 	"context"
