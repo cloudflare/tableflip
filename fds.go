@@ -72,6 +72,16 @@ func newFile(fd uintptr, name fileName) *file {
 	}
 }
 
+func isPortDynamicallyAssigned(addr string) bool {
+	// udp* and tcp* use the same resolver
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		// anything that's not udp* tcp*
+		return false
+	}
+	return udpAddr.Port == 0
+}
+
 // Fds holds all file descriptors inherited from the
 // parent process.
 type Fds struct {
@@ -116,16 +126,18 @@ func (f *Fds) ListenWithCallback(network, addr string, callback func(network, ad
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	ln, err := f.listenerLocked(network, addr)
-	if err != nil {
-		return nil, err
-	}
+	dynamicPort := isPortDynamicallyAssigned(addr)
+	if !dynamicPort {
+		ln, err := f.listenerLocked(network, addr)
+		if err != nil {
+			return nil, err
+		}
 
-	if ln != nil {
-		return ln, nil
+		if ln != nil {
+			return ln, nil
+		}
 	}
-
-	ln, err = callback(network, addr)
+	ln, err := callback(network, addr)
 	if err != nil {
 		return nil, fmt.Errorf("can't create new listener: %s", err)
 	}
@@ -135,6 +147,10 @@ func (f *Fds) ListenWithCallback(network, addr string, callback func(network, ad
 		return nil, fmt.Errorf("%T doesn't implement tableflip.Listener", ln)
 	}
 
+	if dynamicPort {
+		// Update addr to have the assigned port
+		addr = ln.Addr().String()
+	}
 	err = f.addListenerLocked(network, addr, ln.(Listener))
 	if err != nil {
 		ln.Close()
@@ -213,16 +229,18 @@ func (f *Fds) ListenPacketWithCallback(network, addr string, callback func(netwo
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	conn, err := f.packetConnLocked(network, addr)
-	if err != nil {
-		return nil, err
-	}
+	dynamicPort := isPortDynamicallyAssigned(addr)
+	if !dynamicPort {
+		conn, err := f.packetConnLocked(network, addr)
+		if err != nil {
+			return nil, err
+		}
 
-	if conn != nil {
-		return conn, nil
+		if conn != nil {
+			return conn, nil
+		}
 	}
-
-	conn, err = callback(network, addr)
+	conn, err := callback(network, addr)
 	if err != nil {
 		return nil, fmt.Errorf("can't create new listener: %s", err)
 	}
@@ -231,6 +249,10 @@ func (f *Fds) ListenPacketWithCallback(network, addr string, callback func(netwo
 		return nil, fmt.Errorf("%T doesn't implement tableflip.PacketConn", conn)
 	}
 
+	if dynamicPort {
+		// Update addr to have the assigned port
+		addr = conn.LocalAddr().String()
+	}
 	err = f.addSyscallConnLocked(packetKind, network, addr, conn.(PacketConn))
 	if err != nil {
 		conn.Close()

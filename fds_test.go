@@ -70,6 +70,7 @@ func TestFdsListen(t *testing.T) {
 	socketPath, cleanup := tempSocket(t)
 	defer cleanup()
 
+	actualAddrs := [][]string{}
 	addrs := [][2]string{
 		{"tcp", "localhost:0"},
 		{"udp", "localhost:0"},
@@ -87,30 +88,38 @@ func TestFdsListen(t *testing.T) {
 		)
 	}
 
-	var (
-		ln  io.Closer
-		err error
-	)
-
 	parent := newFds(nil, nil)
 	for _, addr := range addrs {
 		switch addr[0] {
 		case "udp", "unixgram":
-			ln, err = parent.ListenPacket(addr[0], addr[1])
+			ln, err := parent.ListenPacket(addr[0], addr[1])
+			if err != nil {
+				t.Fatalf("Can't create %s listener: %s", addr[0], err)
+			}
+			if ln == nil {
+				t.Fatalf("Got a nil %s listener", addr[0])
+			}
+			actualAddrs = append(actualAddrs, []string{addr[0], ln.LocalAddr().String()})
+			ln.Close()
 		default:
-			ln, err = parent.Listen(addr[0], addr[1])
+			ln, err := parent.Listen(addr[0], addr[1])
+			if err != nil {
+				t.Fatalf("Can't create %s listener: %s", addr[0], err)
+			}
+			if ln == nil {
+				t.Fatalf("Got a nil %s listener", addr[0])
+			}
+			actualAddrs = append(actualAddrs, []string{addr[0], ln.Addr().String()})
+			ln.Close()
 		}
-		if err != nil {
-			t.Fatalf("Can't create %s listener: %s", addr[0], err)
-		}
-		if ln == nil {
-			t.Fatalf("Got a nil %s listener", addr[0])
-		}
-		ln.Close()
 	}
 
+	var (
+		ln  io.Closer
+		err error
+	)
 	child := newFds(parent.copy(), nil)
-	for _, addr := range addrs {
+	for _, addr := range actualAddrs {
 		switch addr[0] {
 		case "udp", "unixgram":
 			ln, err = child.PacketConn(addr[0], addr[1])
@@ -131,6 +140,7 @@ func TestFdsListenWithCallback(t *testing.T) {
 	socketPath, cleanup := tempSocket(t)
 	defer cleanup()
 
+	actualAddrs := [][]string{}
 	addrs := [][2]string{
 		{"tcp", "localhost:0"},
 		{"udp", "localhost:0"},
@@ -138,11 +148,6 @@ func TestFdsListenWithCallback(t *testing.T) {
 		{"unixgram", socketPath + "Unixgram"},
 	}
 	parent := newFds(nil, nil)
-
-	var (
-		ln  io.Closer
-		err error
-	)
 
 	called := false
 	packetCb := func(network, addr string) (net.PacketConn, error) {
@@ -158,24 +163,38 @@ func TestFdsListenWithCallback(t *testing.T) {
 		called = false
 		switch addr[0] {
 		case "udp", "unixgram":
-			ln, err = parent.ListenPacketWithCallback(addr[0], addr[1], packetCb)
+			ln, err := parent.ListenPacketWithCallback(addr[0], addr[1], packetCb)
+			if err != nil {
+				t.Fatalf("Can't create %s listener: %s", addr[0], err)
+			}
+			if ln == nil {
+				t.Fatalf("Got a nil %s listener", addr[0])
+			}
+			actualAddrs = append(actualAddrs, []string{addr[0], ln.LocalAddr().String()})
+			ln.Close()
 		default:
-			ln, err = parent.ListenWithCallback(addr[0], addr[1], listenerCb)
-		}
-		if err != nil {
-			t.Fatalf("Can't create %s listener: %s", addr[0], err)
-		}
-		if ln == nil {
-			t.Fatalf("Got a nil %s listener", addr[0])
+			ln, err := parent.ListenWithCallback(addr[0], addr[1], listenerCb)
+			if err != nil {
+				t.Fatalf("Can't create %s listener: %s", addr[0], err)
+			}
+			if ln == nil {
+				t.Fatalf("Got a nil %s listener", addr[0])
+			}
+			actualAddrs = append(actualAddrs, []string{addr[0], ln.Addr().String()})
+			ln.Close()
 		}
 		if !called {
 			t.Fatalf("Callback not called for new %s listener", addr[0])
 		}
-		ln.Close()
 	}
 
+	var (
+		ln  io.Closer
+		err error
+	)
+
 	child := newFds(parent.copy(), nil)
-	for _, addr := range addrs {
+	for _, addr := range actualAddrs {
 		called = false
 		switch addr[0] {
 		case "udp", "unixgram":
@@ -193,6 +212,68 @@ func TestFdsListenWithCallback(t *testing.T) {
 			t.Fatalf("Callback called for inherited %s listener", addr[0])
 		}
 		ln.Close()
+	}
+}
+
+func TestFdsListenPacketDynamicPort(t *testing.T) {
+	requestedAddr := "localhost:0"
+
+	parent := newFds(nil, nil)
+	listenDynamicPort := func() *net.UDPAddr {
+		packetListener, err := parent.ListenPacket("udp", requestedAddr)
+		if err != nil {
+			t.Fatal("Can't create listener")
+		}
+		if packetListener == nil {
+			t.Fatal("Got a nil listener")
+		}
+		localAddr := packetListener.LocalAddr().(*net.UDPAddr)
+		packetListener.Close()
+		return localAddr
+	}
+
+	localAddrs := []*net.UDPAddr{listenDynamicPort(), listenDynamicPort()}
+	for _, localAddr := range localAddrs {
+		child := newFds(parent.copy(), nil)
+		packetListener, err := child.ListenPacket("udp", localAddr.String())
+		if err != nil {
+			t.Fatalf("Can't get retrieve %s from child: %s", localAddr.String(), err)
+		}
+		if packetListener == nil {
+			t.Fatalf("Missing %s listener", localAddr.String())
+		}
+		packetListener.Close()
+	}
+}
+
+func TestFdsListenDynamicPort(t *testing.T) {
+	requestedAddr := "localhost:0"
+
+	parent := newFds(nil, nil)
+	listenDynamicPort := func() *net.TCPAddr {
+		listener, err := parent.Listen("tcp", requestedAddr)
+		if err != nil {
+			t.Fatal("Can't create listener")
+		}
+		if listener == nil {
+			t.Fatal("Got a nil listener")
+		}
+		localAddr := listener.Addr().(*net.TCPAddr)
+		listener.Close()
+		return localAddr
+	}
+
+	localAddrs := []*net.TCPAddr{listenDynamicPort(), listenDynamicPort()}
+	for _, localAddr := range localAddrs {
+		child := newFds(parent.copy(), nil)
+		listener, err := child.Listen("tcp", localAddr.String())
+		if err != nil {
+			t.Fatalf("Can't get retrieve %s from child: %s", localAddr.String(), err)
+		}
+		if listener == nil {
+			t.Fatalf("Missing %s listener", localAddr.String())
+		}
+		listener.Close()
 	}
 }
 
