@@ -60,8 +60,8 @@ func Example_tcpServer() {
 			}
 
 			go func() {
-				c.SetDeadline(time.Now().Add(time.Second))
-				c.Write([]byte("It is a mistake to think you can solve any major problems just with potatoes.\n"))
+				_ = c.SetDeadline(time.Now().Add(time.Second))
+				_, _ = c.Write([]byte("It is a mistake to think you can solve any major problems just with potatoes.\n"))
 				c.Close()
 			}()
 		}
