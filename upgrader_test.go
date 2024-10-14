@@ -137,7 +137,7 @@ func childProcess(upg *Upgrader) error {
 	// error here won't make the parent fail, so don't bother.
 	if rExit != nil {
 		var b [1]byte
-		rExit.Read(b[:])
+		_, _ = rExit.Read(b[:])
 	}
 
 	return nil

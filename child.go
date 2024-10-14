@@ -82,8 +82,8 @@ func (c *child) String() string {
 	return c.proc.String()
 }
 
-func (c *child) Kill() {
-	c.proc.Signal(os.Kill)
+func (c *child) Kill() error {
+	return c.proc.Signal(os.Kill)
 }
 
 func (c *child) waitExit(result chan<- error, exited chan<- struct{}) {
