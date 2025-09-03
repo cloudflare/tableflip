@@ -45,7 +45,7 @@ func newOSProcess(executable string, args []string, files []*os.File, env []stri
 	args = append([]string{executable}, args...)
 	pid, _, err := syscall.StartProcess(executable, args, attr)
 	if err != nil {
-		return nil, fmt.Errorf("fork/exec: %s", err)
+		return nil, fmt.Errorf("fork/exec: %s %s", err, executable)
 	}
 
 	// Ensure that fds stay valid until after StartProcess finishes.
