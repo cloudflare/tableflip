@@ -7,9 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"testing"
@@ -225,7 +225,7 @@ func TestUpgraderOnOS(t *testing.T) {
 	}
 
 	for i, name := range names {
-		nameBytes, err := ioutil.ReadAll(readers[i])
+		nameBytes, err := io.ReadAll(readers[i])
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -441,13 +441,13 @@ func TestUpgraderShutdownCancelsUpgrade(t *testing.T) {
 func TestReadyWritesPIDFile(t *testing.T) {
 	t.Parallel()
 
-	dir, err := ioutil.TempDir("", "tableflip")
+	dir, err := os.MkdirTemp("", "tableflip")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(dir)
 
-	file := dir + "/pid"
+	file := filepath.Join(dir, "pid")
 	u := newTestUpgrader(Options{
 		PIDFile: file,
 	})

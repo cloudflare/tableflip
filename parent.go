@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 )
 
@@ -54,7 +53,7 @@ func newParent(env *env) (*parent, map[fileName]*file, error) {
 	go func() {
 		defer rd.Close()
 
-		n, err := io.Copy(ioutil.Discard, rd)
+		n, err := io.Copy(io.Discard, rd)
 		if n != 0 {
 			err = errors.New("unexpected data from parent process")
 		} else if err != nil {

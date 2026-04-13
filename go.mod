@@ -1,5 +1,5 @@
 module github.com/cloudflare/tableflip
 
-go 1.14
+go 1.25.0
 
-require golang.org/x/sys v0.0.0-20210119212857-b64e53b001e4
+require golang.org/x/sys v0.43.0

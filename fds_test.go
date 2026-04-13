@@ -2,11 +2,11 @@ package tableflip
 
 import (
 	"io"
-	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"testing"
 )
 
@@ -58,7 +58,7 @@ func TestFdsAddPacketConn(t *testing.T) {
 func tempSocket(t *testing.T) (string, func()) {
 	t.Helper()
 
-	temp, err := ioutil.TempDir("", "tableflip")
+	temp, err := os.MkdirTemp("", "tableflip")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -444,6 +444,11 @@ func TestFdsFiles(t *testing.T) {
 	if len(files) != len(testcases) {
 		t.Fatalf("Expected %d files, got %d", len(testcases), len(files))
 	}
+
+	// Sort files by name to ensure deterministic order
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].Name() < files[j].Name()
+	})
 
 	for i, ff := range files {
 		tc := testcases[i]

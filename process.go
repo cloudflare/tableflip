@@ -8,8 +8,6 @@ import (
 	"syscall"
 )
 
-var initialWD, _ = os.Getwd()
-
 type process interface {
 	fmt.Stringer
 	Signal(sig os.Signal) error
@@ -24,7 +22,7 @@ type osProcess struct {
 func newOSProcess(executable string, args []string, files []*os.File, env []string) (process, error) {
 	executable, err := exec.LookPath(executable)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("exec failed: %s", err)
 	}
 
 	fds := make([]uintptr, 0, len(files))
@@ -36,8 +34,13 @@ func newOSProcess(executable string, args []string, files []*os.File, env []stri
 		fds = append(fds, fd)
 	}
 
+	wd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("get current working directory failed: %s", err)
+	}
+
 	attr := &syscall.ProcAttr{
-		Dir:   initialWD,
+		Dir:   wd,
 		Env:   env,
 		Files: fds,
 	}

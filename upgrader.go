@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
@@ -76,10 +75,6 @@ func New(opts Options) (upg *Upgrader, err error) {
 }
 
 func newUpgrader(env *env, opts Options) (*Upgrader, error) {
-	if initialWD == "" {
-		return nil, errors.New("couldn't determine initial working directory")
-	}
-
 	parent, files, err := newParent(env)
 	if err != nil {
 		return nil, err
@@ -291,16 +286,20 @@ func writePIDFile(path string) error {
 	// if dir is empty, the user probably specified just the name
 	// of the pid file expecting it to be created in the current work directory
 	if dir == "" {
-		dir = initialWD
+		wd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed get directory for pid file: %s", err)
+		}
+		dir = wd
 	}
 
 	if dir == "" {
-		return errors.New("empty initial working directory")
+		return errors.New("directory for pid file is empty")
 	}
 
-	fh, err := ioutil.TempFile(dir, file)
+	fh, err := os.CreateTemp(dir, file)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create temporary pid file: %s", err)
 	}
 	defer fh.Close()
 	// Remove temporary PID file if something fails
@@ -308,10 +307,15 @@ func writePIDFile(path string) error {
 
 	_, err = fh.WriteString(strconv.Itoa(os.Getpid()))
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to write pid file: %s", err)
 	}
 
-	return os.Rename(fh.Name(), path)
+	err = os.Rename(fh.Name(), path)
+	if err != nil {
+		return fmt.Errorf("failed to overwrite pid file: %s", err)
+	}
+
+	return nil
 }
 
 // Check if this is a supported OS.
