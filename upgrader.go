@@ -178,7 +178,13 @@ func (u *Upgrader) HasParent() bool {
 	return u.parent != nil
 }
 
-// Upgrade triggers an upgrade.
+// Upgrade starts a zero-downtime upgrade of the current process.
+//
+// It does not return immediately after spawning the child: the call blocks
+// until the upgrade either succeeds or fails. On failure it returns an error
+// (for example if the child exits uncleanly or the process is already
+// upgrading/terminating). On success the parent should drain work and exit
+// so the child can take over.
 func (u *Upgrader) Upgrade() error {
 	response := make(chan error, 1)
 	select {
