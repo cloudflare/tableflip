@@ -67,3 +67,8 @@ of systemd, you can work around this by logging directly to journald, for exampl
 by using [go-systemd/journal](https://godoc.org/github.com/coreos/go-systemd/journal)
 and looking for the [$JOURNAL_STREAM](https://www.freedesktop.org/software/systemd/man/systemd.exec.html#$JOURNAL_STREAM)
 environment variable.
+
+## Integration with `supervisord`
+
+See the [supervisord example](examples/supervisord) for a process proxy and
+configuration that keep supervisord attached across tableflip upgrades.
