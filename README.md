@@ -46,6 +46,7 @@ if err := upg.Ready(); err != nil {
 ```
 
 Please see the more elaborate [graceful shutdown with net/http](http_example_test.go) example.
+For gRPC servers, see the [graceful gRPC server example](examples/grpc-server).
 
 ## Integration with `systemd`
 
