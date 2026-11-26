@@ -61,6 +61,28 @@ PIDFile=/path/to/pid-file
 
 See the [documentation](https://godoc.org/github.com/cloudflare/tableflip) as well.
 
+
+## Integration with `supervisord`
+
+`supervisord` tracks the PID of the process it started. After a tableflip upgrade the
+new process has a different PID, so supervisord will think the service died unless you
+run the binary under [`pidproxy`](http://supervisord.org/subprocess.html#pidproxy-program).
+
+Example `supervisord` program config:
+
+```ini
+[program:myapp]
+command=/usr/bin/pidproxy /path/to/pid-file /path/to/binary -pid-file /path/to/pid-file
+autorestart=true
+stopsignal=TERM
+```
+
+Your process must write its PID to the same file passed to `pidproxy` (for example via
+`tableflip.Options.PIDFile`). Send `SIGHUP` to the pidproxy / program to trigger an upgrade
+the same way as with systemd `ExecReload`.
+
+See also issue discussion: https://github.com/cloudflare/tableflip/issues/43
+
 The logs of a process using `tableflip` may go missing due to a [bug in journald](https://github.com/systemd/systemd/issues/13708),
 which has been fixed by systemd v244 release. If you are running an older version
 of systemd, you can work around this by logging directly to journald, for example
